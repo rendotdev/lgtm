@@ -1,0 +1,47 @@
+{
+  "name": "@rendotdev/pi-extensions",
+  "version": "0.1.0",
+  "description": "Rendotdev Pi extensions packaged for GitHub and npm installs.",
+  "type": "module",
+  "private": false,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rendotdev/pi-extensions.git"
+  },
+  "bugs": {
+    "url": "https://github.com/rendotdev/pi-extensions/issues"
+  },
+  "homepage": "https://github.com/rendotdev/pi-extensions#readme",
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "rendotdev"
+  ],
+  "files": [
+    "README.md",
+    "extensions",
+    "tsconfig.json"
+  ],
+  "scripts": {
+    "check": "tsc --noEmit",
+    "pack:dry": "npm pack --dry-run"
+  },
+  "pi": {
+    "extensions": [
+      "./extensions"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-ai": "^0.80.3",
+    "@earendil-works/pi-coding-agent": "^0.80.3",
+    "@types/node": "^24.0.0",
+    "typescript": "^5.8.3"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
