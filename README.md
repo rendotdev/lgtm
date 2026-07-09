@@ -68,6 +68,16 @@ Each review gets its own folder name made from Pi's session ID plus a random rev
 
 ## Development
 
+This repo should commit and push with the rendotdev identity. In a local checkout, run:
+
+```bash
+git config user.name Ren
+git config user.email rpdeshaies+rendotdev@gmail.com
+git config core.hooksPath .githooks
+git config remote.origin.url git@github-rendotdev:rendotdev/pi-extensions.git
+git config remote.origin.pushurl git@github-rendotdev:rendotdev/pi-extensions.git
+```
+
 Install dependencies and type-check the package:
 
 ```bash

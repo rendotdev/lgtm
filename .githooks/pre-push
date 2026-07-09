@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+expected_remote="git@github-rendotdev:rendotdev/pi-extensions.git"
+expected_email="rpdeshaies+rendotdev@gmail.com"
+remote_name="${1:-}"
+remote_url="${2:-}"
+
+if [[ "$remote_name" != "origin" || "$remote_url" != "$expected_remote" ]]; then
+  cat >&2 <<MSG
+Push blocked. This repo must push to rendotdev through the github-rendotdev SSH host.
+Expected remote: origin $expected_remote
+Actual remote:   $remote_name $remote_url
+MSG
+  exit 1
+fi
+
+auth_output="$(ssh -T git@github-rendotdev 2>&1 || true)"
+if [[ "$auth_output" != *"Hi rendotdev!"* ]]; then
+  cat >&2 <<MSG
+Push blocked. SSH did not authenticate as rendotdev.
+SSH output:
+$auth_output
+MSG
+  exit 1
+fi
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+  [[ "$local_sha" =~ ^0+$ ]] && continue
+  if [[ "$remote_sha" =~ ^0+$ ]]; then
+    range="$local_sha"
+  else
+    range="$remote_sha..$local_sha"
+  fi
+
+  bad_commits="$(git log --format='%h %an <%ae> | %cn <%ce>' "$range" -- 2>/dev/null | grep -v "<$expected_email> | .*<$expected_email>" || true)"
+  if [[ -n "$bad_commits" ]]; then
+    cat >&2 <<MSG
+Push blocked. Commits must be authored and committed with the rendotdev email.
+Expected email: $expected_email
+Bad commits:
+$bad_commits
+MSG
+    exit 1
+  fi
+done
