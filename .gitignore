@@ -9,4 +9,4 @@ pnpm-debug.log*
 !.env.example
 dist/
 coverage/
-.pi-diff/
+.lgtm/

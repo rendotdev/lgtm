@@ -1,25 +1,18 @@
-import { Type } from "@earendil-works/pi-ai";
-import {
-  defineTool,
-  type ExtensionAPI,
-  type ExtensionContext,
-  withFileMutationQueue,
-} from "@earendil-works/pi-coding-agent";
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, readdir, stat, unlink, writeFile } from "node:fs/promises";
 import { extname, join, resolve } from "node:path";
 import process from "node:process";
 
-type DiffReviewFileInput = {
+export type DiffReviewFileInput = {
   location: string;
   oldContent: string;
   newContent: string;
 };
 
-type DiffReviewPointer = {
+export type ReviewPointer = {
   name: string;
-  piSessionId: string;
+  sessionId: string;
   reviewUUID: string;
   reviewId: string;
   appDir: string;
@@ -35,6 +28,25 @@ type ReviewSourceFile = {
   newContent: string;
   added: number;
   removed: number;
+};
+
+export type DocumentSource = {
+  location?: string;
+  markdown: string;
+};
+
+type DocumentComment = {
+  id: string;
+  selectedText: string;
+  startBlockId: string;
+  endBlockId: string;
+  startLine: number;
+  endLine: number;
+  prefix: string;
+  suffix: string;
+  comment: string;
+  createdAt: string;
+  updatedAt: string;
 };
 
 type ReviewComment = {
@@ -64,13 +76,14 @@ type ReviewFile = {
   comments: ReviewComment[];
 };
 
-type ReviewStatus = "open" | "finished";
+export type ReviewStatus = "open" | "approved" | "changes_requested";
 
-type ReviewJson = {
-  version: 1;
+export type ReviewJson = {
+  version: 2;
+  kind: "diff" | "document";
   status: ReviewStatus;
   name: string;
-  piSessionId: string;
+  sessionId: string;
   reviewUUID: string;
   reviewId: string;
   sessionUUID?: string;
@@ -83,11 +96,14 @@ type ReviewJson = {
   updatedAt: string;
   finishedAt?: string;
   files: ReviewFile[];
+  document?: DocumentSource;
+  documentComments: DocumentComment[];
 };
 
-type ReviewPayload = {
+export type ReviewPayload = {
+  kind: "diff" | "document";
   name: string;
-  piSessionId: string;
+  sessionId: string;
   reviewUUID: string;
   reviewId: string;
   cwd: string;
@@ -95,6 +111,7 @@ type ReviewPayload = {
   reviewPath: string;
   generatedAt: string;
   files: ReviewSourceFile[];
+  document?: DocumentSource;
 };
 
 type CommandResult = {
@@ -114,259 +131,104 @@ type ReviewServerState = ReviewServerInfo & {
   startedAt: string;
 };
 
-const lastReviewByCwd = new Map<string, DiffReviewPointer>();
+const lastReviewByCwd = new Map<string, ReviewPointer>();
 const activeReviewServersByCwd = new Map<string, ReviewServerState>();
 const finishWatchersByReviewPath = new Map<string, ReturnType<typeof setInterval>>();
 let processCleanupRegistered = false;
 
-const fileInputSchema = Type.Object({
-  location: Type.String({ description: "File path or display path." }),
-  oldContent: Type.String({ description: "Original file content before the change." }),
-  newContent: Type.String({ description: "Updated file content after the change." }),
-});
-
-function createOpenPiDiffReviewTool(pi: ExtensionAPI) {
-  return defineTool({
-    name: "pi-diff-open-review",
-    label: "Open Pi Diff Review",
-    description:
-      "Open an interactive Bun, React, TypeScript pi-diff review app in .pi-diff/{piSessionId}-{reviewUUID}. Input is name plus files with location, oldContent, and newContent.",
-    promptSnippet:
-      "Open an interactive browser pi-diff review app for proposed file changes.",
-    promptGuidelines: [
-      "Use pi-diff-open-review when the user wants to review proposed file changes in a browser before giving feedback.",
-      "After the user says they are done reviewing, use pi-diff-finish-review to load review.json into context.",
-    ],
-    parameters: Type.Object({
-      name: Type.String({ description: "Human-readable review name." }),
-      files: Type.Array(fileInputSchema, {
-        minItems: 1,
-        description: "Files to review.",
-      }),
-      open: Type.Optional(
-        Type.Boolean({
-          description: "Open the Bun review app in the default browser. Defaults to true.",
-          default: true,
-        }),
-      ),
-    }),
-    prepareArguments(args): { name: string; files: DiffReviewFileInput[]; open?: boolean } {
-      if (!args || typeof args !== "object") {
-        return args as { name: string; files: DiffReviewFileInput[]; open?: boolean };
-      }
-
-      const input = args as {
-        name?: unknown;
-        files?: unknown;
-        path?: unknown;
-        location?: unknown;
-        old?: unknown;
-        new?: unknown;
-        oldContent?: unknown;
-        newContent?: unknown;
-      };
-
-      if (Array.isArray(input.files)) {
-        return args as { name: string; files: DiffReviewFileInput[]; open?: boolean };
-      }
-
-      const location = input.location ?? input.path;
-      const oldContent = input.oldContent ?? input.old;
-      const newContent = input.newContent ?? input.new;
-      if (
-        typeof location === "string" &&
-        typeof oldContent === "string" &&
-        typeof newContent === "string"
-      ) {
-        return {
-          ...input,
-          files: [{ location, oldContent, newContent }],
-        } as { name: string; files: DiffReviewFileInput[]; open?: boolean };
-      }
-
-      return args as { name: string; files: DiffReviewFileInput[]; open?: boolean };
-    },
-    async execute(_toolCallId, params, signal, onUpdate, ctx) {
-      const cwd = ctx.cwd;
-      const piSessionId = getPiSessionId(ctx);
-      const reviewUUID = randomUUID();
-      const reviewId = `${piSessionId}-${reviewUUID}`;
-      const appDir = resolve(cwd, ".pi-diff", reviewId);
-      const reviewPath = join(appDir, "review.json");
-      const generatedAt = new Date().toISOString();
-
-      const files = params.files.map((file: DiffReviewFileInput, index: number) =>
-        buildReviewSourceFile(file, index),
-      );
-
-      onUpdate?.({
-        content: [{ type: "text", text: "Stopping any previous pi-diff review server..." }],
-        details: {},
-      });
-      await stopActiveReviewServer(cwd);
-
-      await mkdir(appDir, { recursive: true });
-
-      const review = await withFileMutationQueue(reviewPath, async () => {
-        const existingReview = await readReviewIfExists(reviewPath);
-        const nextReview = buildReviewJson({
-          name: params.name,
-          piSessionId,
-          reviewUUID,
-          reviewId,
-          cwd,
-          appDir,
-          reviewPath,
-          generatedAt,
-          files,
-          existingReview,
-        });
-        const payload: ReviewPayload = {
-          name: params.name,
-          piSessionId,
-          reviewUUID,
-          reviewId,
-          cwd,
-          appDir,
-          reviewPath,
-          generatedAt,
-          files,
-        };
-
-        await writeReviewApp(appDir, payload, nextReview);
-        return nextReview;
-      });
-
-      onUpdate?.({
-        content: [{ type: "text", text: "Installing review app dependencies with Bun..." }],
-        details: {},
-      });
-      await ensureReviewAppDependencies(appDir, signal);
-
-      onUpdate?.({
-        content: [{ type: "text", text: "Starting Bun review server..." }],
-        details: {},
-      });
-      const server = await startReviewServer(appDir, signal);
-      const url = server.url;
-
-      const reviewWithUrl = { ...review, url, updatedAt: new Date().toISOString() };
-      await writeFile(reviewPath, `${JSON.stringify(reviewWithUrl, null, 2)}\n`, "utf8");
-
-      const serverState: ReviewServerState = {
-        ...server,
-        appDir,
-        reviewId,
-        startedAt: new Date().toISOString(),
-      };
-      await writeReviewServerState(cwd, serverState);
-      activeReviewServersByCwd.set(cwd, serverState);
-      registerProcessCleanup();
-
-      const pointer = { name: params.name, piSessionId, reviewUUID, reviewId, appDir, url, reviewPath };
-      lastReviewByCwd.set(cwd, pointer);
-      startReviewFinishWatcher(pi, cwd, pointer);
-
-      if (params.open !== false) {
-        openInDefaultBrowser(url);
-      }
-
-      return {
-        content: [
-          {
-            type: "text",
-            text: [
-              `Opened pi-diff review app: ${params.name}`,
-              `URL: ${url}`,
-              `App directory: ${appDir}`,
-              `Review JSON: ${reviewPath}`,
-              "Comments save to review.json through the Bun server when review state changes.",
-              "The Send button marks review.json as finished, stops the server, closes the tab when possible, and asks Pi to continue with the review feedback.",
-              "Opening a new review stops the previous local review server.",
-              "When the user finishes reviewing without the Send button, call pi-diff-finish-review to load the synced comments and stop the server.",
-            ].join("\n"),
-          },
-        ],
-        details: pointer,
-      };
-    },
-  });
-}
-
-function createFinishPiDiffReviewTool() {
-  return defineTool({
-    name: "pi-diff-finish-review",
-    label: "Finish Pi Diff Review",
-    description:
-      "Finish a synced .pi-diff review by reading review.json, returning its comments for model feedback, and stopping its local server by default.",
-    promptSnippet: "Finish comments from a browser pi-diff review created by pi-diff-open-review.",
-    promptGuidelines: [
-      "Use pi-diff-finish-review when the user says they are done with a browser pi-diff review or asks for feedback from review comments.",
-    ],
-    parameters: Type.Object({
-      reviewId: Type.Optional(
-        Type.String({ description: "Review folder name under .pi-diff, formatted as {piSessionId}-{reviewUUID}. Defaults to the current or latest review." }),
-      ),
-      reviewPath: Type.Optional(
-        Type.String({ description: "Explicit path to review.json. Overrides reviewId." }),
-      ),
-      stopServer: Type.Optional(
-        Type.Boolean({ description: "Stop the local Bun review server after reading. Defaults to true.", default: true }),
-      ),
-    }),
-    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const resolvedReviewPath = await resolveReviewPath(ctx, params.reviewPath, params.reviewId);
-      if (!resolvedReviewPath) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: "No pi-diff review was found. Open one with pi-diff-open-review first.",
-            },
-          ],
-          details: { found: false },
-        };
-      }
-
-      const raw = await readFile(resolvedReviewPath, "utf8");
-      const review = JSON.parse(raw) as ReviewJson;
-      stopReviewFinishWatcher(resolvedReviewPath);
-      const stoppedServer = params.stopServer === false ? false : await stopReviewServerForReview(ctx.cwd, review, resolvedReviewPath);
-      const stoppedText = stoppedServer ? "\n\nStopped the local pi-diff review server." : "";
-      return {
-        content: [
-          {
-            type: "text",
-            text: `${formatReviewForModel(review, resolvedReviewPath)}${stoppedText}\n\nRaw review.json:\n\n\`\`\`json\n${JSON.stringify(review, null, 2)}\n\`\`\``,
-          },
-        ],
-        details: { found: true, reviewPath: resolvedReviewPath, review, stoppedServer },
-      };
-    },
-  });
-}
-
-export default function piDiffExtension(pi: ExtensionAPI) {
-  pi.registerTool(createOpenPiDiffReviewTool(pi));
-  pi.registerTool(createFinishPiDiffReviewTool());
-
-  pi.on("input", async (event, ctx) => {
-    if (event.source === "extension") return;
-    await stopActiveReviewServer(ctx.cwd);
-  });
-
-  pi.on("session_shutdown", async (_event, ctx) => {
-    stopAllReviewFinishWatchers();
-    await stopActiveReviewServer(ctx.cwd);
-  });
-}
-
-function getPiSessionId(ctx: ExtensionContext): string {
-  return sanitizePathSegment(ctx.sessionManager.getSessionId() || `ephemeral-${randomUUID()}`);
-}
-
 function sanitizePathSegment(value: string): string {
   return value.replace(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 160) || randomUUID();
+}
+
+export type OpenReviewInput = {
+  kind: "diff" | "document";
+  name: string;
+  files?: DiffReviewFileInput[];
+  document?: DocumentSource;
+};
+
+export type OpenReviewOptions = {
+  cwd: string;
+  sessionId?: string;
+  signal?: AbortSignal;
+  cleanupOnExit?: boolean;
+  onUpdate?: (message: string) => void;
+  onFinished?: (review: ReviewJson, formattedReview: string) => void | Promise<void>;
+};
+
+export async function openReview(input: OpenReviewInput, options: OpenReviewOptions): Promise<ReviewPointer> {
+  const cwd = resolve(options.cwd);
+  const sessionId = sanitizePathSegment(options.sessionId ?? `cli-${process.pid}`);
+  const reviewUUID = randomUUID();
+  const reviewId = `${sessionId}-${reviewUUID}`;
+  const appDir = resolve(cwd, ".lgtm", reviewId);
+  const reviewPath = join(appDir, "review.json");
+  const generatedAt = new Date().toISOString();
+  const files = (input.files ?? []).map((file, index) => buildReviewSourceFile(file, index));
+
+  options.onUpdate?.("Stopping any previous LGTM review server...");
+  await stopActiveReviewServer(cwd);
+  await mkdir(appDir, { recursive: true });
+
+  const review = buildReviewJson({
+    kind: input.kind,
+    name: input.name,
+    sessionId: sessionId,
+    reviewUUID,
+    reviewId,
+    cwd,
+    appDir,
+    reviewPath,
+    generatedAt,
+    files,
+    document: input.document,
+  });
+  const payload: ReviewPayload = {
+    kind: input.kind,
+    name: input.name,
+    sessionId: sessionId,
+    reviewUUID,
+    reviewId,
+    cwd,
+    appDir,
+    reviewPath,
+    generatedAt,
+    files,
+    document: input.document,
+  };
+  await writeReviewApp(appDir, payload, review);
+
+  options.onUpdate?.("Installing LGTM review app dependencies with Bun...");
+  await ensureReviewAppDependencies(appDir, options.signal);
+
+  options.onUpdate?.("Starting LGTM Bun review server...");
+  const server = await startReviewServer(appDir, options.signal);
+  const url = server.url;
+  await writeFile(reviewPath, `${JSON.stringify({ ...review, url, updatedAt: new Date().toISOString() }, null, 2)}\n`, "utf8");
+
+  const serverState: ReviewServerState = {
+    ...server,
+    appDir,
+    reviewId,
+    startedAt: new Date().toISOString(),
+  };
+  await writeReviewServerState(cwd, serverState);
+  activeReviewServersByCwd.set(cwd, serverState);
+  if (options.cleanupOnExit) registerProcessCleanup();
+
+  const pointer: ReviewPointer = {
+    name: input.name,
+    sessionId: sessionId,
+    reviewUUID,
+    reviewId,
+    appDir,
+    url,
+    reviewPath,
+  };
+  lastReviewByCwd.set(cwd, pointer);
+  if (options.onFinished) startReviewFinishWatcher(cwd, pointer, options.onFinished);
+  openInDefaultBrowser(url);
+  return pointer;
 }
 
 function buildReviewSourceFile(file: DiffReviewFileInput, index: number): ReviewSourceFile {
@@ -380,6 +242,130 @@ function buildReviewSourceFile(file: DiffReviewFileInput, index: number): Review
     added: counts.added,
     removed: counts.removed,
   };
+}
+
+export async function collectGitReviewFiles(cwd: string, signal?: AbortSignal): Promise<DiffReviewFileInput[]> {
+  const rootResult = await runCommand("git", ["rev-parse", "--show-toplevel"], cwd, signal, 10_000);
+  if (rootResult.code !== 0) {
+    throw new Error(`Unable to open Git review from ${cwd}.\n${rootResult.stderr || rootResult.stdout}`);
+  }
+  const root = rootResult.stdout.trim();
+  const headResult = await runCommand("git", ["rev-parse", "--verify", "HEAD"], root, signal, 10_000);
+  const hasHead = headResult.code === 0;
+  const changedPaths: Array<{ oldPath?: string; newPath?: string }> = [];
+
+  if (hasHead) {
+    const diffResult = await runCommand(
+      "git",
+      ["diff", "--name-status", "-z", "--find-renames", "HEAD", "--"],
+      root,
+      signal,
+      30_000,
+    );
+    if (diffResult.code !== 0) {
+      throw new Error(`git diff failed.\n${diffResult.stderr || diffResult.stdout}`);
+    }
+    changedPaths.push(...parseGitNameStatus(diffResult.stdout));
+  } else {
+    const trackedResult = await runCommand(
+      "git",
+      ["ls-files", "--cached", "--others", "--exclude-standard", "-z"],
+      root,
+      signal,
+      30_000,
+    );
+    if (trackedResult.code !== 0) {
+      throw new Error(`git ls-files failed.\n${trackedResult.stderr || trackedResult.stdout}`);
+    }
+    for (const path of trackedResult.stdout.split("\0").filter(Boolean)) {
+      changedPaths.push({ newPath: path });
+    }
+  }
+
+  const untrackedResult = await runCommand(
+    "git",
+    ["ls-files", "--others", "--exclude-standard", "-z"],
+    root,
+    signal,
+    30_000,
+  );
+  if (untrackedResult.code !== 0) {
+    throw new Error(`git ls-files failed.\n${untrackedResult.stderr || untrackedResult.stdout}`);
+  }
+  for (const path of untrackedResult.stdout.split("\0").filter(Boolean)) {
+    changedPaths.push({ newPath: path });
+  }
+
+  const deduplicated = new Map<string, { oldPath?: string; newPath?: string }>();
+  for (const change of changedPaths) {
+    deduplicated.set(change.newPath ?? change.oldPath ?? randomUUID(), change);
+  }
+
+  const files: DiffReviewFileInput[] = [];
+  for (const change of deduplicated.values()) {
+    const oldContent = hasHead && change.oldPath
+      ? await readGitFile(root, change.oldPath, signal)
+      : "";
+    const newContent = change.newPath
+      ? await readWorkingTreeFile(root, change.newPath)
+      : "";
+    if (oldContent.includes("\0") || newContent.includes("\0")) continue;
+    files.push({
+      location: change.newPath ?? change.oldPath ?? "unknown",
+      oldContent,
+      newContent,
+    });
+  }
+
+  if (files.length === 0) {
+    throw new Error("No text changes were found to review.");
+  }
+  return files;
+}
+
+function parseGitNameStatus(output: string): Array<{ oldPath?: string; newPath?: string }> {
+  const fields = output.split("\0").filter(Boolean);
+  const changes: Array<{ oldPath?: string; newPath?: string }> = [];
+  for (let index = 0; index < fields.length; index += 1) {
+    let status = "";
+    let path = "";
+    const tab = fields[index].indexOf("\t");
+    if (tab >= 0) {
+      status = fields[index].slice(0, tab);
+      path = fields[index].slice(tab + 1);
+    } else {
+      status = fields[index];
+      path = fields[index + 1] ?? "";
+      index += 1;
+    }
+
+    const kind = status.charAt(0);
+    if (kind === "R" || kind === "C") {
+      const newPath = fields[index + 1] ?? "";
+      index += 1;
+      changes.push({ oldPath: path, newPath });
+    } else if (kind === "A") {
+      changes.push({ newPath: path });
+    } else if (kind === "D") {
+      changes.push({ oldPath: path });
+    } else {
+      changes.push({ oldPath: path, newPath: path });
+    }
+  }
+  return changes.filter((change) => change.oldPath || change.newPath);
+}
+
+async function readGitFile(root: string, path: string, signal?: AbortSignal): Promise<string> {
+  const result = await runCommand("git", ["show", `HEAD:${path}`], root, signal, 30_000);
+  return result.code === 0 ? result.stdout : "";
+}
+
+async function readWorkingTreeFile(root: string, path: string): Promise<string> {
+  try {
+    return await readFile(resolve(root, path), "utf8");
+  } catch {
+    return "";
+  }
 }
 
 function splitLines(text: string): string[] {
@@ -478,8 +464,9 @@ async function readReviewIfExists(reviewPath: string): Promise<ReviewJson | unde
 }
 
 function buildReviewJson(input: {
+  kind: "diff" | "document";
   name: string;
-  piSessionId: string;
+  sessionId: string;
   reviewUUID: string;
   reviewId: string;
   cwd: string;
@@ -487,6 +474,7 @@ function buildReviewJson(input: {
   reviewPath: string;
   generatedAt: string;
   files: ReviewSourceFile[];
+  document?: DocumentSource;
   existingReview?: ReviewJson;
 }): ReviewJson {
   const existingByLocation = new Map<string, ReviewFile>();
@@ -495,10 +483,11 @@ function buildReviewJson(input: {
   }
 
   return {
-    version: 1,
+    version: 2,
+    kind: input.kind,
     status: "open",
     name: input.name,
-    piSessionId: input.piSessionId,
+    sessionId: input.sessionId,
     reviewUUID: input.reviewUUID,
     reviewId: input.reviewId,
     cwd: input.cwd,
@@ -512,6 +501,8 @@ function buildReviewJson(input: {
       removed: file.removed,
       comments: existingByLocation.get(file.location)?.comments ?? [],
     })),
+    document: input.document,
+    documentComments: input.existingReview?.documentComments ?? [],
   };
 }
 
@@ -537,11 +528,14 @@ function buildReviewPackageJson() {
       "@heroui/styles": "^3.2.2",
       "@pierre/diffs": "^1.2.12",
       "@tailwindcss/cli": "^4.3.2",
+      "@tailwindcss/typography": "^0.5.19",
       "@tanstack/react-form": "^1.33.1",
       geist: "^1.7.2",
       "lucide-react": "^1.23.0",
       react: "^19.0.0",
       "react-dom": "^19.0.0",
+      "react-markdown": "^10.1.0",
+      "remark-gfm": "^4.0.1",
       tailwindcss: "^4.3.2",
     },
     devDependencies: {},
@@ -553,10 +547,13 @@ async function ensureReviewAppDependencies(appDir: string, signal?: AbortSignal)
     await stat(join(appDir, "node_modules", "@heroui", "react"));
     await stat(join(appDir, "node_modules", "@pierre", "diffs"));
     await stat(join(appDir, "node_modules", "@tailwindcss", "cli"));
+    await stat(join(appDir, "node_modules", "@tailwindcss", "typography"));
     await stat(join(appDir, "node_modules", "@tanstack", "react-form"));
     await stat(join(appDir, "node_modules", "geist"));
     await stat(join(appDir, "node_modules", "lucide-react"));
     await stat(join(appDir, "node_modules", "react"));
+    await stat(join(appDir, "node_modules", "react-markdown"));
+    await stat(join(appDir, "node_modules", "remark-gfm"));
     await stat(join(appDir, "node_modules", "tailwindcss"));
     return;
   } catch {
@@ -623,7 +620,7 @@ function startReviewServer(appDir: string, signal?: AbortSignal): Promise<Review
 
     const onStdout = (chunk: Buffer) => {
       const text = chunk.toString("utf8");
-      const match = text.match(/PI_DIFF_REVIEW_URL=(\S+)/);
+      const match = text.match(/LGTM_REVIEW_URL=(\S+)/);
       if (match?.[1]) {
         void finish(match[1]);
       }
@@ -648,11 +645,11 @@ function startReviewServer(appDir: string, signal?: AbortSignal): Promise<Review
 }
 
 function getActiveReviewServerPath(cwd: string) {
-  return join(cwd, ".pi-diff", "active-server.json");
+  return join(cwd, ".lgtm", "active-server.json");
 }
 
 async function writeReviewServerState(cwd: string, state: ReviewServerState) {
-  await mkdir(join(cwd, ".pi-diff"), { recursive: true });
+  await mkdir(join(cwd, ".lgtm"), { recursive: true });
   await writeFile(getActiveReviewServerPath(cwd), `${JSON.stringify(state, null, 2)}\n`, "utf8");
   await writeFile(join(state.appDir, "server.json"), `${JSON.stringify(state, null, 2)}\n`, "utf8");
 }
@@ -682,7 +679,7 @@ async function stopActiveReviewServer(cwd: string) {
 }
 
 async function stopKnownReviewServers(cwd: string) {
-  const baseDir = join(cwd, ".pi-diff");
+  const baseDir = join(cwd, ".lgtm");
   let stopped = false;
   let entries;
   try {
@@ -712,7 +709,11 @@ async function stopKnownReviewServers(cwd: string) {
   return stopped;
 }
 
-function startReviewFinishWatcher(pi: ExtensionAPI, cwd: string, pointer: DiffReviewPointer) {
+function startReviewFinishWatcher(
+  cwd: string,
+  pointer: ReviewPointer,
+  onFinished: NonNullable<OpenReviewOptions["onFinished"]>,
+) {
   stopReviewFinishWatcher(pointer.reviewPath);
 
   const interval = setInterval(async () => {
@@ -723,14 +724,10 @@ function startReviewFinishWatcher(pi: ExtensionAPI, cwd: string, pointer: DiffRe
       return;
     }
 
-    if (review.status !== "finished") return;
+    if (review.status === "open") return;
     stopReviewFinishWatcher(pointer.reviewPath);
     await stopReviewServerForReview(cwd, review, pointer.reviewPath).catch(() => false);
-    pi.sendUserMessage([
-      "The browser pi-diff review was finished. Continue using this synced review feedback; the review content is already included below.",
-      "",
-      formatReviewForModel(review, pointer.reviewPath),
-    ].join("\n"), { deliverAs: "followUp" });
+    await onFinished(review, formatReviewForModel(review, pointer.reviewPath));
   }, 1_000);
 
   (interval as unknown as { unref?: () => void }).unref?.();
@@ -916,22 +913,41 @@ function openInDefaultBrowser(target: string) {
   child.unref();
 }
 
-async function resolveReviewPath(
-  ctx: ExtensionContext,
-  explicitReviewPath?: string,
-  explicitReviewId?: string,
-): Promise<string | undefined> {
-  if (explicitReviewPath) return resolve(ctx.cwd, explicitReviewPath);
-  if (explicitReviewId) return join(ctx.cwd, ".pi-diff", sanitizePathSegment(explicitReviewId), "review.json");
+export type FinishReviewResult =
+  | { found: false }
+  | { found: true; reviewPath: string; review: ReviewJson; stoppedServer: boolean; formattedReview: string };
 
-  const pointer = lastReviewByCwd.get(ctx.cwd);
+export async function finishReview(cwd: string): Promise<FinishReviewResult> {
+  const resolvedCwd = resolve(cwd);
+  const reviewPath = await resolveReviewPath(resolvedCwd);
+  if (!reviewPath) return { found: false };
+
+  const review = JSON.parse(await readFile(reviewPath, "utf8")) as ReviewJson;
+  stopReviewFinishWatcher(reviewPath);
+  const stoppedServer = await stopReviewServerForReview(resolvedCwd, review, reviewPath);
+  return {
+    found: true,
+    reviewPath,
+    review,
+    stoppedServer,
+    formattedReview: formatReviewForModel(review, reviewPath),
+  };
+}
+
+export async function stopReviews(cwd: string) {
+  stopAllReviewFinishWatchers();
+  return await stopActiveReviewServer(resolve(cwd));
+}
+
+async function resolveReviewPath(cwd: string): Promise<string | undefined> {
+  const pointer = lastReviewByCwd.get(cwd);
   if (pointer) return pointer.reviewPath;
 
-  return findLatestReviewPath(ctx.cwd);
+  return findLatestReviewPath(cwd);
 }
 
 async function findLatestReviewPath(cwd: string): Promise<string | undefined> {
-  const baseDir = join(cwd, ".pi-diff");
+  const baseDir = join(cwd, ".lgtm");
   try {
     const entries = await readdir(baseDir, { withFileTypes: true });
     const candidates: Array<{ path: string; mtimeMs: number }> = [];
@@ -952,12 +968,12 @@ async function findLatestReviewPath(cwd: string): Promise<string | undefined> {
   }
 }
 
-function formatReviewForModel(review: ReviewJson, reviewPath: string): string {
+export function formatReviewForModel(review: ReviewJson, reviewPath: string): string {
   const lines: string[] = [];
-  lines.push(`# Diff review: ${review.name}`);
+  lines.push(`# ${review.kind === "document" ? "Document" : "Diff"} review: ${review.name}`);
   lines.push("");
   lines.push(`Review JSON: ${reviewPath}`);
-  lines.push(`Pi session: ${review.piSessionId ?? review.sessionUUID ?? "unknown"}`);
+  lines.push(`Session: ${review.sessionId ?? review.sessionUUID ?? "unknown"}`);
   lines.push(`Review ID: ${review.reviewId ?? review.sessionUUID ?? "unknown"}`);
   lines.push(`Review UUID: ${review.reviewUUID ?? "unknown"}`);
   lines.push(`Status: ${review.status ?? "open"}`);
@@ -965,6 +981,23 @@ function formatReviewForModel(review: ReviewJson, reviewPath: string): string {
   if (review.url) lines.push(`Review app URL: ${review.url}`);
   lines.push(`Updated: ${review.updatedAt}`);
   lines.push("");
+
+  if (review.kind === "document") {
+    if (review.document?.location) lines.push(`Document: ${review.document.location}`, "");
+    const comments = review.documentComments.filter((comment) => comment.comment.trim().length > 0);
+    for (const comment of comments) {
+      const range = comment.startLine === comment.endLine
+        ? `Line ${comment.startLine}`
+        : `Lines ${comment.startLine}-${comment.endLine}`;
+      lines.push(`## ${range}`);
+      lines.push("");
+      lines.push(`Selected text: ${truncateForReview(comment.selectedText.trim() || "(none)")}`);
+      lines.push(`Comment: ${comment.comment.trim()}`);
+      lines.push("");
+    }
+    if (comments.length === 0) lines.push("No written review comments were found.");
+    return lines.join("\n");
+  }
 
   let commentCount = 0;
   for (const file of review.files) {
@@ -1047,10 +1080,13 @@ async function writeReview(review) {
   return nextReview;
 }
 
-async function finishReview() {
+async function finishReview(decision) {
+  if (decision !== "approved" && decision !== "changes_requested") {
+    throw new Error("Invalid review decision.");
+  }
   const review = await readJson(reviewPath);
   const now = new Date().toISOString();
-  const nextReview = await writeReview({ ...review, status: "finished", finishedAt: now });
+  const nextReview = await writeReview({ ...review, status: decision, finishedAt: now });
   setTimeout(() => process.exit(0), 300);
   return nextReview;
 }
@@ -1099,8 +1135,8 @@ const server = Bun.serve({
     const url = new URL(request.url);
 
     if (url.pathname === "/") {
-      const payload = await readJson(payloadPath).catch(() => ({ name: "Pi-diff review" }));
-      const pageTitle = escapeHtml("pi-diff • " + (payload.name || "Pi-diff review"));
+      const payload = await readJson(payloadPath).catch(() => ({ name: "LGTM review" }));
+      const pageTitle = escapeHtml("LGTM • " + (payload.name || "LGTM review"));
       const html = "<!doctype html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"utf-8\" />\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\n  <title>" + pageTitle + "</title>\n  <link rel=\"stylesheet\" href=\"/client.css\" />\n</head>\n<body>\n  <main id=\"root\"></main>\n  <script type=\"module\" src=\"/client.js\"></script>\n</body>\n</html>";
       return new Response(html, { headers: { "content-type": "text/html; charset=utf-8" } });
     }
@@ -1145,7 +1181,8 @@ const server = Bun.serve({
     }
 
     if (url.pathname === "/api/finish" && request.method === "POST") {
-      return Response.json(await finishReview());
+      const body = await request.json();
+      return Response.json(await finishReview(body.decision));
     }
 
     if (url.pathname === "/health") {
@@ -1156,13 +1193,14 @@ const server = Bun.serve({
   },
 });
 
-console.log("PI_DIFF_REVIEW_URL=" + server.url.href);
+console.log("LGTM_REVIEW_URL=" + server.url.href);
 `;
 }
 
 function buildReviewStylesSource(): string {
   return String.raw`@import "tailwindcss";
 @import "../node_modules/@heroui/styles/dist/heroui.min.css";
+@plugin "@tailwindcss/typography";
 @source "./main.tsx";
 
 @font-face {
@@ -1242,6 +1280,16 @@ body {
   --review-radius: var(--vercel-radius);
   font-family: var(--font-mono);
 }
+
+.document-review-surface ::selection {
+  background: #fef08a;
+  color: inherit;
+}
+
+.document-review-block[data-annotated="true"] {
+  background: #fffbeb;
+  box-shadow: -4px 0 0 #f59e0b;
+}
 `;
 }
 
@@ -1252,6 +1300,8 @@ import { Button, Card, Chip, CloseButton, InputGroup, Spinner, TextArea, Typogra
 import { Check, Copy as CopyIcon, X } from "lucide-react";
 import { useForm } from "@tanstack/react-form";
 import { MultiFileDiff, type DiffLineAnnotation, type SelectedLineRange } from "@pierre/diffs/react";
+import ReactMarkdown, { type Components } from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 type ReviewSourceFile = {
   id: string;
@@ -1285,13 +1335,33 @@ type ReviewFile = {
   comments: ReviewComment[];
 };
 
-type ReviewStatus = "open" | "finished";
+type DocumentSource = {
+  location?: string;
+  markdown: string;
+};
+
+type DocumentComment = {
+  id: string;
+  selectedText: string;
+  startBlockId: string;
+  endBlockId: string;
+  startLine: number;
+  endLine: number;
+  prefix: string;
+  suffix: string;
+  comment: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type ReviewStatus = "open" | "approved" | "changes_requested";
 
 type ReviewJson = {
-  version: 1;
+  version: 2;
+  kind: "diff" | "document";
   status: ReviewStatus;
   name: string;
-  piSessionId: string;
+  sessionId: string;
   reviewUUID: string;
   reviewId: string;
   cwd: string;
@@ -1302,11 +1372,14 @@ type ReviewJson = {
   updatedAt: string;
   finishedAt?: string;
   files: ReviewFile[];
+  document?: DocumentSource;
+  documentComments: DocumentComment[];
 };
 
 type ReviewPayload = {
+  kind: "diff" | "document";
   name: string;
-  piSessionId: string;
+  sessionId: string;
   reviewUUID: string;
   reviewId: string;
   cwd: string;
@@ -1314,6 +1387,7 @@ type ReviewPayload = {
   reviewPath: string;
   generatedAt: string;
   files: ReviewSourceFile[];
+  document?: DocumentSource;
 };
 
 type AppState = {
@@ -1353,6 +1427,9 @@ async function saveReview(review: ReviewJson): Promise<ReviewJson> {
 }
 
 function reviewCommentCount(review: ReviewJson) {
+  if (review.kind === "document") {
+    return review.documentComments.filter((comment) => comment.comment.trim().length > 0).length;
+  }
   return review.files.reduce((total, file) => total + file.comments.filter((comment) => comment.comment.trim().length > 0).length, 0);
 }
 
@@ -1364,6 +1441,20 @@ function reviewFilesWithWrittenComments(review: ReviewJson) {
 }
 
 function meaningfulReviewSignature(review: ReviewJson) {
+  if (review.kind === "document") {
+    return JSON.stringify(review.documentComments.filter((comment) => comment.comment.trim().length > 0).map((comment) => ({
+      id: comment.id,
+      selectedText: comment.selectedText,
+      startBlockId: comment.startBlockId,
+      endBlockId: comment.endBlockId,
+      startLine: comment.startLine,
+      endLine: comment.endLine,
+      prefix: comment.prefix,
+      suffix: comment.suffix,
+      comment: comment.comment,
+      createdAt: comment.createdAt,
+    })));
+  }
   return JSON.stringify(reviewFilesWithWrittenComments(review).map((file) => ({
     location: file.location,
     comments: file.comments.map((comment) => ({
@@ -1383,6 +1474,12 @@ function meaningfulReviewSignature(review: ReviewJson) {
 }
 
 function reviewForSave(review: ReviewJson): ReviewJson {
+  if (review.kind === "document") {
+    return {
+      ...review,
+      documentComments: review.documentComments.filter((comment) => comment.comment.trim().length > 0),
+    };
+  }
   return {
     ...review,
     files: reviewFilesWithWrittenComments(review),
@@ -1515,6 +1612,39 @@ function App() {
     }));
   }
 
+  function addDocumentComment(comment: DocumentComment) {
+    commitReview((review) => ({
+      ...review,
+      updatedAt: new Date().toISOString(),
+      documentComments: [...review.documentComments, comment],
+    }));
+    setActiveCommentId(comment.id);
+  }
+
+  function updateDocumentComment(commentId: string, patch: Partial<DocumentComment>) {
+    commitReview((review) => {
+      let changed = false;
+      const documentComments = review.documentComments.map((comment) => {
+        if (comment.id !== commentId) return comment;
+        const nextComment = { ...comment, ...patch, updatedAt: new Date().toISOString() };
+        const hasChanged = JSON.stringify({ ...comment, updatedAt: undefined }) !== JSON.stringify({ ...nextComment, updatedAt: undefined });
+        if (!hasChanged) return comment;
+        changed = true;
+        return nextComment;
+      });
+      return changed ? { ...review, updatedAt: new Date().toISOString(), documentComments } : review;
+    });
+  }
+
+  function deleteDocumentComment(commentId: string) {
+    commitReview((review) => {
+      const documentComments = review.documentComments.filter((comment) => comment.id !== commentId);
+      return documentComments.length === review.documentComments.length
+        ? review
+        : { ...review, updatedAt: new Date().toISOString(), documentComments };
+    });
+  }
+
   async function copyReviewPath() {
     if (!state) return;
     try {
@@ -1526,17 +1656,23 @@ function App() {
     }
   }
 
-  async function finishReview() {
-    if (!state || isFinishing || isSaving || reviewCommentCount(state.review) === 0) return;
+  async function finishReview(decision: "approved" | "changes_requested") {
+    if (!state || isFinishing || isSaving) return;
+    if (decision === "changes_requested" && reviewCommentCount(state.review) === 0) return;
     setIsFinishing(true);
     try {
-      const response = await fetch("/api/finish", { method: "POST" });
+      const response = await fetch("/api/finish", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ decision }),
+      });
       if (!response.ok) throw new Error(await response.text());
       const finishedReview = await response.json() as ReviewJson;
       setState((current) => current ? { ...current, review: finishedReview } : current);
       window.setTimeout(() => {
         window.close();
-        document.body.innerHTML = '<main style="font-family: system-ui, sans-serif; padding: 2rem; color: #111827;"><h1>Review finished</h1><p>You can close this tab.</p></main>';
+        const heading = decision === "approved" ? "LGTM" : "Comments sent";
+        document.body.innerHTML = '<main style="font-family: system-ui, sans-serif; padding: 2rem; color: #111827;"><h1>' + heading + '</h1><p>You can close this tab.</p></main>';
       }, 250);
     } catch (finishError) {
       setIsFinishing(false);
@@ -1553,9 +1689,9 @@ function App() {
 
   const { payload, review } = state;
   const commentCount = reviewCommentCount(review);
-  const isFinished = review.status === "finished";
+  const isFinished = review.status !== "open";
   const commentLabel = commentCount + " " + (commentCount === 1 ? "comment" : "comments");
-  const sendButtonLabel = isFinished ? "Sent " + commentLabel : isFinishing ? "Sending" : isSaving ? "Saving" : commentCount > 0 ? "Send " + commentLabel : "Send comments";
+  const sendButtonLabel = isFinishing ? "Sending" : isSaving ? "Saving" : commentCount > 0 ? "Send " + commentLabel : "Send comments";
   const savedTime = lastSavedAt ? lastSavedAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : null;
 
   return <div className="min-h-screen">
@@ -1579,20 +1715,31 @@ function App() {
           </InputGroup>
         </div>
         <div className="flex min-w-0 flex-wrap items-center gap-3 md:shrink-0 md:justify-end">
-          <Typography type="body-xs" elementType="span" color="muted" aria-hidden={!isFinished && !savedTime} className={"leading-none " + (!isFinished && !savedTime ? "opacity-0" : "")}>{isFinished ? "Finished" : savedTime ? "Saved " + savedTime : "Saved 00:00"}</Typography>
+          <Typography type="body-xs" elementType="span" color="muted" aria-hidden={!isFinished && !savedTime} className={"leading-none " + (!isFinished && !savedTime ? "opacity-0" : "")}>{review.status === "approved" ? "Approved" : review.status === "changes_requested" ? "Comments sent" : savedTime ? "Saved " + savedTime : "Saved 00:00"}</Typography>
           {error ? <Chip size="sm" color="danger" variant="soft" className="max-w-full"><Chip.Label><Typography type="body-xs" elementType="span" truncate className="leading-none">{error}</Typography></Chip.Label></Chip> : null}
-          <Button size="sm" variant="primary" isPending={isFinishing || isSaving} isDisabled={isFinished || commentCount === 0} onPress={finishReview} title={commentCount === 0 ? "Add a comment before sending" : isSaving ? "Saving comments" : "Send review comments"}>
+          <Button size="sm" variant="secondary" isDisabled={isFinished || isFinishing || isSaving || commentCount === 0} onPress={() => finishReview("changes_requested")} title={commentCount === 0 ? "Add a comment before sending" : "Send review comments"}>
+            <span>{sendButtonLabel}</span>
+          </Button>
+          <Button size="sm" variant="primary" isPending={isFinishing || isSaving} isDisabled={isFinished} onPress={() => finishReview("approved")} title="Approve this review">
             {({ isPending }) => <span className="inline-flex items-center gap-2">
               {isPending ? <Spinner size="sm" color="current" className="-ms-0.5" /> : null}
-              <span>{sendButtonLabel}</span>
+              <span>LGTM</span>
             </span>}
           </Button>
         </div>
       </div>
     </header>
 
-    <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-4 pb-[50vh]">
-      {payload.files.map((file) => {
+    <div className={"mx-auto flex flex-col gap-4 px-4 py-4 pb-[50vh] " + (payload.kind === "document" ? "max-w-4xl" : "max-w-7xl")}>
+      {payload.kind === "document" && payload.document ? <DocumentReviewSurface
+        document={payload.document}
+        comments={review.documentComments}
+        activeCommentId={activeCommentId}
+        setActiveCommentId={setActiveCommentId}
+        addComment={addDocumentComment}
+        updateComment={updateDocumentComment}
+        deleteComment={deleteDocumentComment}
+      /> : payload.files.map((file) => {
         const reviewFile = review.files.find((item) => item.location === file.location) || { location: file.location, added: file.added, removed: file.removed, comments: [] };
         return <ReviewFileDiff
           key={file.id}
@@ -1618,6 +1765,112 @@ type ReviewFileDiffProps = {
   updateComment: (fileLocation: string, commentId: string, patch: Partial<ReviewComment>) => void;
   deleteComment: (fileLocation: string, commentId: string) => void;
 };
+
+function DocumentReviewSurface(props: {
+  document: DocumentSource;
+  comments: DocumentComment[];
+  activeCommentId: string | null;
+  setActiveCommentId: (id: string | null) => void;
+  addComment: (comment: DocumentComment) => void;
+  updateComment: (commentId: string, patch: Partial<DocumentComment>) => void;
+  deleteComment: (commentId: string) => void;
+}) {
+  const articleRef = useRef<HTMLElement | null>(null);
+
+  function renderBlock(tag: string, node: { position?: { start: { line: number }; end: { line: number } } } | undefined, content: React.ReactNode) {
+    const startLine = node?.position?.start.line ?? 0;
+    const endLine = node?.position?.end.line ?? startLine;
+    const blockId = tag + ":" + startLine + ":" + endLine;
+    const annotations = props.comments.filter((comment) => comment.endBlockId === blockId);
+    const annotated = props.comments.some((comment) => comment.startLine <= endLine && comment.endLine >= startLine);
+    return <div
+      className="document-review-block -mx-3 rounded-md px-3 transition-colors"
+      data-annotated={annotated ? "true" : "false"}
+      data-document-block={blockId}
+      data-start-line={startLine}
+      data-end-line={endLine}
+    >
+      {content}
+      {annotations.map((comment) => <div key={comment.id} className="not-prose mb-4">
+        <CommentEditor
+          id={comment.id}
+          value={comment.comment}
+          active={props.activeCommentId === comment.id}
+          setActiveCommentId={props.setActiveCommentId}
+          onChange={(value) => props.updateComment(comment.id, { comment: value })}
+          onFinish={(value) => {
+            if (value.trim().length === 0) props.deleteComment(comment.id);
+            else props.updateComment(comment.id, { comment: value });
+          }}
+          onDelete={() => props.deleteComment(comment.id)}
+        />
+      </div>)}
+    </div>;
+  }
+
+  const components = useMemo<Components>(() => ({
+    h1: ({ node, children, ...elementProps }) => renderBlock("h1", node, <h1 {...elementProps}>{children}</h1>),
+    h2: ({ node, children, ...elementProps }) => renderBlock("h2", node, <h2 {...elementProps}>{children}</h2>),
+    h3: ({ node, children, ...elementProps }) => renderBlock("h3", node, <h3 {...elementProps}>{children}</h3>),
+    h4: ({ node, children, ...elementProps }) => renderBlock("h4", node, <h4 {...elementProps}>{children}</h4>),
+    h5: ({ node, children, ...elementProps }) => renderBlock("h5", node, <h5 {...elementProps}>{children}</h5>),
+    h6: ({ node, children, ...elementProps }) => renderBlock("h6", node, <h6 {...elementProps}>{children}</h6>),
+    p: ({ node, children, ...elementProps }) => renderBlock("p", node, <p {...elementProps}>{children}</p>),
+    pre: ({ node, children, ...elementProps }) => renderBlock("pre", node, <pre {...elementProps}>{children}</pre>),
+    blockquote: ({ node, children, ...elementProps }) => renderBlock("blockquote", node, <blockquote {...elementProps}>{children}</blockquote>),
+    table: ({ node, children, ...elementProps }) => renderBlock("table", node, <div className="overflow-x-auto"><table {...elementProps}>{children}</table></div>),
+    hr: ({ node, ...elementProps }) => renderBlock("hr", node, <hr {...elementProps} />),
+    a: ({ node: _node, children, ...elementProps }) => <a {...elementProps} target="_blank" rel="noreferrer">{children}</a>,
+  }), [props.comments, props.activeCommentId]);
+
+  function handleMouseUp() {
+    window.setTimeout(() => {
+      const root = articleRef.current;
+      const selection = document.getSelection();
+      if (!root || !selection || selection.isCollapsed || selection.rangeCount === 0) return;
+      const selectedText = selection.toString().trim();
+      if (!selectedText) return;
+      const range = selection.getRangeAt(0);
+      const startElement = getElementFromNode(range.startContainer);
+      const endElement = getElementFromNode(range.endContainer);
+      if (startElement?.closest("[data-review-comment]") || endElement?.closest("[data-review-comment]")) return;
+      const startBlock = startElement?.closest<HTMLElement>("[data-document-block]");
+      const endBlock = endElement?.closest<HTMLElement>("[data-document-block]");
+      if (!startBlock || !endBlock || !root.contains(startBlock) || !root.contains(endBlock)) return;
+
+      const beforeRange = document.createRange();
+      beforeRange.selectNodeContents(root);
+      beforeRange.setEnd(range.startContainer, range.startOffset);
+      const fullText = root.textContent ?? "";
+      const startOffset = beforeRange.toString().length;
+      const now = new Date().toISOString();
+      const comment: DocumentComment = {
+        id: makeId(),
+        selectedText,
+        startBlockId: startBlock.dataset.documentBlock ?? "",
+        endBlockId: endBlock.dataset.documentBlock ?? "",
+        startLine: Number.parseInt(startBlock.dataset.startLine ?? "0", 10),
+        endLine: Number.parseInt(endBlock.dataset.endLine ?? "0", 10),
+        prefix: fullText.slice(Math.max(0, startOffset - 40), startOffset),
+        suffix: fullText.slice(startOffset + selectedText.length, startOffset + selectedText.length + 40),
+        comment: "",
+        createdAt: now,
+        updatedAt: now,
+      };
+      props.addComment(comment);
+      selection.removeAllRanges();
+    }, 0);
+  }
+
+  return <Card className="overflow-hidden border border-slate-300 bg-white" variant="outline">
+    <Card.Content className="p-0">
+      {props.document.location ? <div className="border-b border-slate-200 px-6 py-3 font-mono text-xs text-slate-500">{props.document.location}</div> : null}
+      <article ref={articleRef} onMouseUp={handleMouseUp} className="document-review-surface prose prose-slate max-w-none px-8 py-8 md:px-12 md:py-10">
+        <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>{props.document.markdown}</ReactMarkdown>
+      </article>
+    </Card.Content>
+  </Card>;
+}
 
 const textSelectionCleanupByNode = new WeakMap<HTMLElement, () => void>();
 
@@ -1803,25 +2056,43 @@ function CommentAnnotation(props: {
   updateComment: (fileLocation: string, commentId: string, patch: Partial<ReviewComment>) => void;
   deleteComment: (fileLocation: string, commentId: string) => void;
 }) {
-  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const comment = props.comment;
+  return <CommentEditor
+    id={comment.id}
+    value={comment.comment}
+    active={props.active}
+    setActiveCommentId={props.setActiveCommentId}
+    onChange={(value) => props.updateComment(props.file.location, comment.id, { comment: value })}
+    onFinish={(value) => {
+      props.clearSelectedLines();
+      if (value.trim().length === 0) props.deleteComment(props.file.location, comment.id);
+      else props.updateComment(props.file.location, comment.id, { comment: value });
+    }}
+    onDelete={() => {
+      props.clearSelectedLines();
+      props.deleteComment(props.file.location, comment.id);
+    }}
+  />;
+}
+
+function CommentEditor(props: {
+  id: string;
+  value: string;
+  active: boolean;
+  setActiveCommentId: (id: string | null) => void;
+  onChange: (value: string) => void;
+  onFinish: (value: string) => void;
+  onDelete: () => void;
+}) {
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const form = useForm({
     defaultValues: {
-      comment: comment.comment,
+      comment: props.value,
     },
   });
 
-  function persistComment(value: string) {
-    props.updateComment(props.file.location, comment.id, { comment: value });
-  }
-
   function finishComment(value: string) {
-    props.clearSelectedLines();
-    if (value.trim().length === 0) {
-      props.deleteComment(props.file.location, comment.id);
-    } else {
-      persistComment(value);
-    }
+    props.onFinish(value);
     props.setActiveCommentId(null);
   }
 
@@ -1830,11 +2101,11 @@ function CommentAnnotation(props: {
     textareaRef.current.focus();
     textareaRef.current.selectionStart = textareaRef.current.value.length;
     textareaRef.current.selectionEnd = textareaRef.current.value.length;
-  }, [props.active, comment.id]);
+  }, [props.active, props.id]);
 
   useEffect(() => {
     if (textareaRef.current) resizeTextarea(textareaRef.current);
-  }, [comment.id]);
+  }, [props.id]);
 
   function handleKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key === "Enter" && !event.shiftKey) {
@@ -1844,9 +2115,8 @@ function CommentAnnotation(props: {
   }
 
   function handleClearComment() {
-    props.clearSelectedLines();
     props.setActiveCommentId(null);
-    props.deleteComment(props.file.location, comment.id);
+    props.onDelete();
   }
 
   return <div data-review-comment="true" className="bg-amber-50 py-3 pl-3 pr-6 font-sans">
@@ -1854,7 +2124,7 @@ function CommentAnnotation(props: {
       name="comment"
       listeners={{
         onChangeDebounceMs: 750,
-        onChange: ({ value }) => persistComment(value),
+        onChange: ({ value }) => props.onChange(value),
         onBlur: ({ value }) => finishComment(value),
       }}
     >
@@ -1866,7 +2136,7 @@ function CommentAnnotation(props: {
           placeholder="Add review comment..."
           value={field.state.value}
           variant="secondary"
-          onFocus={() => props.setActiveCommentId(comment.id)}
+          onFocus={() => props.setActiveCommentId(props.id)}
           onBlur={field.handleBlur}
           onChange={(event) => {
             field.handleChange(event.currentTarget.value);

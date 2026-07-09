@@ -1,47 +1,63 @@
 {
-  "name": "@rendotdev/pi-diff",
+  "name": "@rendotdev/lgtm",
   "version": "0.1.0",
-  "description": "Pi-diff extension packaged for Pi.",
+  "description": "Human approval for agent work, with code diff and Markdown review.",
   "type": "module",
   "private": false,
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/rendotdev/pi-diff.git"
+    "url": "git+https://github.com/rendotdev/lgtm.git"
   },
   "bugs": {
-    "url": "https://github.com/rendotdev/pi-diff/issues"
+    "url": "https://github.com/rendotdev/lgtm/issues"
   },
-  "homepage": "https://github.com/rendotdev/pi-diff#readme",
+  "homepage": "https://github.com/rendotdev/lgtm#readme",
   "keywords": [
-    "pi-package",
-    "pi-extension",
+    "human-in-the-loop",
+    "code-review",
+    "ai-agents",
+    "bun",
     "rendotdev"
   ],
   "files": [
     "README.md",
-    "extensions/pi-diff.ts",
+    "extensions/lgtm.ts",
+    "src",
     "tsconfig.json"
   ],
   "scripts": {
+    "lgtm": "bun src/cli.ts",
     "check": "tsc --noEmit",
     "pack:dry": "npm pack --dry-run"
   },
+  "bin": {
+    "lgtm": "src/cli.ts"
+  },
   "pi": {
     "extensions": [
-      "extensions/pi-diff.ts"
+      "extensions/lgtm.ts"
     ]
   },
   "peerDependencies": {
     "@earendil-works/pi-ai": "*",
     "@earendil-works/pi-coding-agent": "*"
   },
+  "peerDependenciesMeta": {
+    "@earendil-works/pi-ai": {
+      "optional": true
+    },
+    "@earendil-works/pi-coding-agent": {
+      "optional": true
+    }
+  },
   "devDependencies": {
     "@earendil-works/pi-ai": "^0.80.3",
     "@earendil-works/pi-coding-agent": "^0.80.3",
+    "@types/bun": "^1.2.0",
     "@types/node": "^24.0.0",
     "typescript": "^5.8.3"
   },
   "engines": {
-    "node": ">=20"
+    "bun": ">=1.2.0"
   }
 }

@@ -1,37 +1,72 @@
-# Pi-diff
+# LGTM
 
-Pi-diff is a Pi extension for browser-based inline diff review comments.
+LGTM is a Bun CLI for putting a human approval step into agent workflows. It opens code diffs and Markdown documents in a local browser review, then returns either review comments or an explicit LGTM approval.
 
-## Install
+## CLI
 
-Install from GitHub:
+Bun is required at runtime.
 
 ```bash
-pi install git:github.com/rendotdev/pi-diff
+bunx @rendotdev/lgtm git
 ```
 
-This package exposes only `extensions/pi-diff.ts`, so the command above installs the pi-diff extension.
+The package also works through `npx` when Bun is installed because the `lgtm` executable uses a Bun shebang:
 
-### Install a specific extension
+```bash
+npx @rendotdev/lgtm git
+```
 
-Pi installs git and npm packages at the package level. To load one extension from a package, use package filtering in `~/.pi/agent/settings.json` or project `.pi/settings.json`:
+Available commands:
+
+```bash
+lgtm git
+lgtm worktree ../feature-worktree
+lgtm custom --input review.json
+lgtm document PLAN.md
+lgtm document --name "Implementation plan" < PLAN.md
+lgtm finish
+lgtm stop
+```
+
+Add `--json` for machine-readable command output and `--cwd <path>` to choose the review workspace.
+
+Custom reviews accept this JSON shape through `--input` or stdin:
 
 ```json
 {
-  "packages": [
+  "name": "Authentication changes",
+  "files": [
     {
-      "source": "git:github.com/rendotdev/pi-diff",
-      "extensions": ["+extensions/pi-diff.ts"],
-      "skills": [],
-      "prompts": [],
-      "themes": []
+      "location": "src/auth.ts",
+      "oldContent": "export const enabled = false;\n",
+      "newContent": "export const enabled = true;\n"
     }
   ]
 }
 ```
 
-For a local checkout, you can point Pi at the single extension file:
+Every review opens in the browser. **Send comments** completes it with `changes_requested`; **LGTM** completes it with `approved`. Both actions save the review and stop the local server.
+
+## Pi integration
+
+Install the package in Pi:
 
 ```bash
-pi -e /absolute/path/to/pi-diff/extensions/pi-diff.ts
+pi install git:github.com/rendotdev/lgtm
 ```
+
+The Pi extension registers:
+
+- `lgtm-open-git-review`
+- `lgtm-open-worktree-review`
+- `lgtm-open-custom-review`
+- `lgtm-open-document-review`
+- `lgtm-finish-review`
+
+Load a local checkout directly with:
+
+```bash
+pi -e /absolute/path/to/lgtm/extensions/lgtm.ts
+```
+
+The CLI core is independent of Pi so future Codex and Claude integrations can use the same review files, server lifecycle, and approval model.
