@@ -1,42 +1,45 @@
 {
   "name": "@rendotdev/lgtm",
   "version": "0.1.0",
-  "description": "Human approval for agent work, with code diff and Markdown review.",
-  "type": "module",
   "private": false,
+  "description": "Human approval for agent work, with code diff and Markdown review.",
+  "keywords": [
+    "ai-agents",
+    "bun",
+    "code-review",
+    "human-in-the-loop",
+    "rendotdev"
+  ],
+  "homepage": "https://github.com/rendotdev/lgtm#readme",
+  "bugs": {
+    "url": "https://github.com/rendotdev/lgtm/issues"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/rendotdev/lgtm.git"
   },
-  "bugs": {
-    "url": "https://github.com/rendotdev/lgtm/issues"
+  "bin": {
+    "lgtm": "dist/cli.mjs"
   },
-  "homepage": "https://github.com/rendotdev/lgtm#readme",
-  "keywords": [
-    "human-in-the-loop",
-    "code-review",
-    "ai-agents",
-    "bun",
-    "rendotdev"
-  ],
   "files": [
     "README.md",
     "extensions/lgtm.ts",
+    "dist",
     "src",
     "tsconfig.json"
   ],
+  "type": "module",
   "scripts": {
     "lgtm": "bun src/cli.ts",
-    "check": "tsc --noEmit",
-    "pack:dry": "npm pack --dry-run"
+    "pack:dry": "bun pm pack --dry-run"
   },
-  "bin": {
-    "lgtm": "src/cli.ts"
-  },
-  "pi": {
-    "extensions": [
-      "extensions/lgtm.ts"
-    ]
+  "devDependencies": {
+    "@earendil-works/pi-ai": "^0.80.3",
+    "@earendil-works/pi-coding-agent": "^0.80.3",
+    "@types/bun": "^1.2.0",
+    "@types/node": "^24.0.0",
+    "vite": "npm:@voidzero-dev/vite-plus-core@0.2.4",
+    "vite-plus": "0.2.4"
   },
   "peerDependencies": {
     "@earendil-works/pi-ai": "*",
@@ -50,14 +53,23 @@
       "optional": true
     }
   },
-  "devDependencies": {
-    "@earendil-works/pi-ai": "^0.80.3",
-    "@earendil-works/pi-coding-agent": "^0.80.3",
-    "@types/bun": "^1.2.0",
-    "@types/node": "^24.0.0",
-    "typescript": "^5.8.3"
+  "overrides": {
+    "vite": "npm:@voidzero-dev/vite-plus-core@0.2.4"
+  },
+  "devEngines": {
+    "packageManager": {
+      "name": "bun",
+      "version": "1.3.14",
+      "onFail": "download"
+    }
   },
   "engines": {
     "bun": ">=1.2.0"
+  },
+  "packageManager": "bun@1.3.14",
+  "pi": {
+    "extensions": [
+      "extensions/lgtm.ts"
+    ]
   }
 }

@@ -70,3 +70,17 @@ pi -e /absolute/path/to/lgtm/extensions/lgtm.ts
 ```
 
 The CLI core is independent of Pi so future Codex and Claude integrations can use the same review files, server lifecycle, and approval model.
+
+## Development
+
+LGTM uses [Vite+](https://viteplus.dev/) as its project toolchain and Bun as its runtime and package manager.
+
+```bash
+vp install
+vp check
+vp test
+vp pack
+vp run lgtm -- --help
+```
+
+`vp pack` is the production build command because LGTM is a package and CLI. Vite+'s `vp build` and `vp dev` commands target browser applications; they will become relevant if the review frontend moves into a standalone Vite application.

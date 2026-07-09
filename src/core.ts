@@ -156,7 +156,10 @@ export type OpenReviewOptions = {
   onFinished?: (review: ReviewJson, formattedReview: string) => void | Promise<void>;
 };
 
-export async function openReview(input: OpenReviewInput, options: OpenReviewOptions): Promise<ReviewPointer> {
+export async function openReview(
+  input: OpenReviewInput,
+  options: OpenReviewOptions,
+): Promise<ReviewPointer> {
   const cwd = resolve(options.cwd);
   const sessionId = sanitizePathSegment(options.sessionId ?? `cli-${process.pid}`);
   const reviewUUID = randomUUID();
@@ -204,7 +207,11 @@ export async function openReview(input: OpenReviewInput, options: OpenReviewOpti
   options.onUpdate?.("Starting LGTM Bun review server...");
   const server = await startReviewServer(appDir, options.signal);
   const url = server.url;
-  await writeFile(reviewPath, `${JSON.stringify({ ...review, url, updatedAt: new Date().toISOString() }, null, 2)}\n`, "utf8");
+  await writeFile(
+    reviewPath,
+    `${JSON.stringify({ ...review, url, updatedAt: new Date().toISOString() }, null, 2)}\n`,
+    "utf8",
+  );
 
   const serverState: ReviewServerState = {
     ...server,
@@ -244,13 +251,24 @@ function buildReviewSourceFile(file: DiffReviewFileInput, index: number): Review
   };
 }
 
-export async function collectGitReviewFiles(cwd: string, signal?: AbortSignal): Promise<DiffReviewFileInput[]> {
+export async function collectGitReviewFiles(
+  cwd: string,
+  signal?: AbortSignal,
+): Promise<DiffReviewFileInput[]> {
   const rootResult = await runCommand("git", ["rev-parse", "--show-toplevel"], cwd, signal, 10_000);
   if (rootResult.code !== 0) {
-    throw new Error(`Unable to open Git review from ${cwd}.\n${rootResult.stderr || rootResult.stdout}`);
+    throw new Error(
+      `Unable to open Git review from ${cwd}.\n${rootResult.stderr || rootResult.stdout}`,
+    );
   }
   const root = rootResult.stdout.trim();
-  const headResult = await runCommand("git", ["rev-parse", "--verify", "HEAD"], root, signal, 10_000);
+  const headResult = await runCommand(
+    "git",
+    ["rev-parse", "--verify", "HEAD"],
+    root,
+    signal,
+    10_000,
+  );
   const hasHead = headResult.code === 0;
   const changedPaths: Array<{ oldPath?: string; newPath?: string }> = [];
 
@@ -303,12 +321,9 @@ export async function collectGitReviewFiles(cwd: string, signal?: AbortSignal): 
 
   const files: DiffReviewFileInput[] = [];
   for (const change of deduplicated.values()) {
-    const oldContent = hasHead && change.oldPath
-      ? await readGitFile(root, change.oldPath, signal)
-      : "";
-    const newContent = change.newPath
-      ? await readWorkingTreeFile(root, change.newPath)
-      : "";
+    const oldContent =
+      hasHead && change.oldPath ? await readGitFile(root, change.oldPath, signal) : "";
+    const newContent = change.newPath ? await readWorkingTreeFile(root, change.newPath) : "";
     if (oldContent.includes("\0") || newContent.includes("\0")) continue;
     files.push({
       location: change.newPath ?? change.oldPath ?? "unknown",
@@ -508,7 +523,11 @@ function buildReviewJson(input: {
 
 async function writeReviewApp(appDir: string, payload: ReviewPayload, review: ReviewJson) {
   await mkdir(join(appDir, "src"), { recursive: true });
-  await writeFile(join(appDir, "package.json"), `${JSON.stringify(buildReviewPackageJson(), null, 2)}\n`, "utf8");
+  await writeFile(
+    join(appDir, "package.json"),
+    `${JSON.stringify(buildReviewPackageJson(), null, 2)}\n`,
+    "utf8",
+  );
   await writeFile(join(appDir, "payload.json"), `${JSON.stringify(payload, null, 2)}\n`, "utf8");
   await writeFile(join(appDir, "review.json"), `${JSON.stringify(review, null, 2)}\n`, "utf8");
   await writeFile(join(appDir, "server.ts"), buildReviewServerSource(), "utf8");
@@ -562,7 +581,9 @@ async function ensureReviewAppDependencies(appDir: string, signal?: AbortSignal)
 
   const result = await runCommand("bun", ["install", "--silent"], appDir, signal, 120_000);
   if (result.code !== 0) {
-    throw new Error(`bun install failed with code ${result.code ?? "unknown"}\n${result.stderr || result.stdout}`);
+    throw new Error(
+      `bun install failed with code ${result.code ?? "unknown"}\n${result.stderr || result.stdout}`,
+    );
   }
 }
 
@@ -634,7 +655,9 @@ function startReviewServer(appDir: string, signal?: AbortSignal): Promise<Review
       if (settled) return;
       settled = true;
       cleanup();
-      rejectPromise(new Error(`Bun review server exited with code ${code ?? "unknown"}.\n${stderr}`));
+      rejectPromise(
+        new Error(`Bun review server exited with code ${code ?? "unknown"}.\n${stderr}`),
+      );
     };
 
     signal?.addEventListener("abort", abort, { once: true });
@@ -656,7 +679,9 @@ async function writeReviewServerState(cwd: string, state: ReviewServerState) {
 
 async function readReviewServerState(cwd: string): Promise<ReviewServerState | undefined> {
   try {
-    const state = JSON.parse(await readFile(getActiveReviewServerPath(cwd), "utf8")) as ReviewServerState;
+    const state = JSON.parse(
+      await readFile(getActiveReviewServerPath(cwd), "utf8"),
+    ) as ReviewServerState;
     if (Number.isInteger(state.pid) && typeof state.appDir === "string") return state;
   } catch {
     // No active server state.
@@ -665,7 +690,7 @@ async function readReviewServerState(cwd: string): Promise<ReviewServerState | u
 }
 
 async function stopActiveReviewServer(cwd: string) {
-  const state = activeReviewServersByCwd.get(cwd) ?? await readReviewServerState(cwd);
+  const state = activeReviewServersByCwd.get(cwd) ?? (await readReviewServerState(cwd));
   let stopped = false;
   if (state) {
     await stopReviewFinishWatcherForAppDir(state.appDir);
@@ -694,14 +719,16 @@ async function stopKnownReviewServers(cwd: string) {
     const pid = await readReviewServerPid(appDir);
     if (!pid) continue;
     const review = await readReviewIfExists(join(appDir, "review.json"));
-    if (review?.url && !await isReviewServerUrlForApp(review.url, appDir)) continue;
-    if (await stopReviewServerProcess({
-      pid,
-      url: review?.url ?? "",
-      appDir,
-      reviewId: review?.reviewId ?? entry.name,
-      startedAt: review?.updatedAt ?? "",
-    })) {
+    if (review?.url && !(await isReviewServerUrlForApp(review.url, appDir))) continue;
+    if (
+      await stopReviewServerProcess({
+        pid,
+        url: review?.url ?? "",
+        appDir,
+        reviewId: review?.reviewId ?? entry.name,
+        startedAt: review?.updatedAt ?? "",
+      })
+    ) {
       stopReviewFinishWatcher(review?.reviewPath ?? join(appDir, "review.json"));
       stopped = true;
     }
@@ -754,8 +781,11 @@ function stopAllReviewFinishWatchers() {
 }
 
 async function stopReviewServerForReview(cwd: string, review: ReviewJson, reviewPath: string) {
-  const activeState = activeReviewServersByCwd.get(cwd) ?? await readReviewServerState(cwd);
-  if (activeState && (activeState.reviewId === review.reviewId || activeState.appDir === review.appDir)) {
+  const activeState = activeReviewServersByCwd.get(cwd) ?? (await readReviewServerState(cwd));
+  if (
+    activeState &&
+    (activeState.reviewId === review.reviewId || activeState.appDir === review.appDir)
+  ) {
     return await stopActiveReviewServer(cwd);
   }
 
@@ -787,7 +817,7 @@ function parseServerPid(value: string) {
 }
 
 async function stopReviewServerProcess(state: ReviewServerState) {
-  if (!await isLikelyReviewServerProcess(state.pid)) return false;
+  if (!(await isLikelyReviewServerProcess(state.pid))) return false;
   killReviewServerPid(state.pid, "SIGTERM");
   if (await waitForProcessExit(state.pid, 1_500)) return true;
   killReviewServerPid(state.pid, "SIGKILL");
@@ -799,7 +829,13 @@ async function isLikelyReviewServerProcess(pid: number) {
   if (process.platform === "win32") return true;
 
   try {
-    const result = await runCommand("ps", ["-p", String(pid), "-o", "command="], process.cwd(), undefined, 5_000);
+    const result = await runCommand(
+      "ps",
+      ["-p", String(pid), "-o", "command="],
+      process.cwd(),
+      undefined,
+      5_000,
+    );
     const command = `${result.stdout}\n${result.stderr}`.toLowerCase();
     return result.code === 0 && command.includes("bun") && command.includes("server.ts");
   } catch {
@@ -809,9 +845,11 @@ async function isLikelyReviewServerProcess(pid: number) {
 
 async function isReviewServerUrlForApp(url: string, appDir: string) {
   try {
-    const response = await fetch(new URL("/api/payload", url), { signal: AbortSignal.timeout(800) });
+    const response = await fetch(new URL("/api/payload", url), {
+      signal: AbortSignal.timeout(800),
+    });
     if (!response.ok) return false;
-    const payload = await response.json() as { appDir?: unknown };
+    const payload = (await response.json()) as { appDir?: unknown };
     return payload.appDir === appDir;
   } catch {
     return false;
@@ -904,7 +942,8 @@ function runCommand(
 }
 
 function openInDefaultBrowser(target: string) {
-  const command = process.platform === "darwin" ? "open" : process.platform === "win32" ? "cmd" : "xdg-open";
+  const command =
+    process.platform === "darwin" ? "open" : process.platform === "win32" ? "cmd" : "xdg-open";
   const args = process.platform === "win32" ? ["/c", "start", "", target] : [target];
   const child = spawn(command, args, {
     detached: true,
@@ -915,7 +954,13 @@ function openInDefaultBrowser(target: string) {
 
 export type FinishReviewResult =
   | { found: false }
-  | { found: true; reviewPath: string; review: ReviewJson; stoppedServer: boolean; formattedReview: string };
+  | {
+      found: true;
+      reviewPath: string;
+      review: ReviewJson;
+      stoppedServer: boolean;
+      formattedReview: string;
+    };
 
 export async function finishReview(cwd: string): Promise<FinishReviewResult> {
   const resolvedCwd = resolve(cwd);
@@ -986,9 +1031,10 @@ export function formatReviewForModel(review: ReviewJson, reviewPath: string): st
     if (review.document?.location) lines.push(`Document: ${review.document.location}`, "");
     const comments = review.documentComments.filter((comment) => comment.comment.trim().length > 0);
     for (const comment of comments) {
-      const range = comment.startLine === comment.endLine
-        ? `Line ${comment.startLine}`
-        : `Lines ${comment.startLine}-${comment.endLine}`;
+      const range =
+        comment.startLine === comment.endLine
+          ? `Line ${comment.startLine}`
+          : `Lines ${comment.startLine}-${comment.endLine}`;
       lines.push(`## ${range}`);
       lines.push("");
       lines.push(`Selected text: ${truncateForReview(comment.selectedText.trim() || "(none)")}`);

@@ -58,12 +58,20 @@ async function readInput(path: string | undefined) {
 }
 
 function assertFiles(value: unknown): asserts value is DiffReviewFileInput[] {
-  if (!Array.isArray(value) || value.length === 0) throw new Error("Custom review input requires a non-empty files array.");
+  if (!Array.isArray(value) || value.length === 0)
+    throw new Error("Custom review input requires a non-empty files array.");
   for (const file of value) {
-    if (!file || typeof file !== "object") throw new Error("Every custom review file must be an object.");
+    if (!file || typeof file !== "object")
+      throw new Error("Every custom review file must be an object.");
     const candidate = file as Record<string, unknown>;
-    if (typeof candidate.location !== "string" || typeof candidate.oldContent !== "string" || typeof candidate.newContent !== "string") {
-      throw new Error("Every custom review file requires location, oldContent, and newContent strings.");
+    if (
+      typeof candidate.location !== "string" ||
+      typeof candidate.oldContent !== "string" ||
+      typeof candidate.newContent !== "string"
+    ) {
+      throw new Error(
+        "Every custom review file requires location, oldContent, and newContent strings.",
+      );
     }
   }
 }
@@ -109,11 +117,14 @@ async function main() {
 
   if (command === "custom") {
     const inputPath = takeOption("--input");
-    const parsed = JSON.parse(await readInput(inputPath)) as { name?: unknown; files?: unknown } | unknown[];
+    const parsed = JSON.parse(await readInput(inputPath)) as
+      | { name?: unknown; files?: unknown }
+      | unknown[];
     const files = Array.isArray(parsed) ? parsed : parsed.files;
     assertFiles(files);
     const inputName = Array.isArray(parsed) ? undefined : parsed.name;
-    const name = takeOption("--name") ?? (typeof inputName === "string" ? inputName : "Custom review");
+    const name =
+      takeOption("--name") ?? (typeof inputName === "string" ? inputName : "Custom review");
     printPointer(await openReview({ kind: "diff", name, files }, reviewOptions()));
     return;
   }
@@ -122,12 +133,18 @@ async function main() {
     const documentPath = args[0]?.startsWith("--") ? undefined : args.shift();
     const markdown = await readInput(documentPath);
     if (!markdown.trim()) throw new Error("Document review requires Markdown input.");
-    const name = takeOption("--name") ?? (documentPath ? `Review ${documentPath}` : "Document review");
-    printPointer(await openReview({
-      kind: "document",
-      name,
-      document: { markdown, location: documentPath },
-    }, reviewOptions()));
+    const name =
+      takeOption("--name") ?? (documentPath ? `Review ${documentPath}` : "Document review");
+    printPointer(
+      await openReview(
+        {
+          kind: "document",
+          name,
+          document: { markdown, location: documentPath },
+        },
+        reviewOptions(),
+      ),
+    );
     return;
   }
 
@@ -135,14 +152,20 @@ async function main() {
     const result = await finishReview(cwd);
     if (jsonOutput) console.log(JSON.stringify(result, null, 2));
     else if (!result.found) console.log("No LGTM review found.");
-    else console.log(`${result.formattedReview}\n\nServer stopped: ${result.stoppedServer ? "yes" : "no"}`);
+    else
+      console.log(
+        `${result.formattedReview}\n\nServer stopped: ${result.stoppedServer ? "yes" : "no"}`,
+      );
     return;
   }
 
   if (command === "stop") {
     const stopped = await stopReviews(cwd);
     if (jsonOutput) console.log(JSON.stringify({ stopped }));
-    else console.log(stopped ? "Stopped the LGTM review server." : "No running LGTM review server found.");
+    else
+      console.log(
+        stopped ? "Stopped the LGTM review server." : "No running LGTM review server found.",
+      );
     return;
   }
 

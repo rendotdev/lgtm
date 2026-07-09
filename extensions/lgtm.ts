@@ -1,5 +1,9 @@
 import { Type } from "@earendil-works/pi-ai";
-import { defineTool, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
+import {
+  defineTool,
+  type ExtensionAPI,
+  type ExtensionContext,
+} from "@earendil-works/pi-coding-agent";
 import { resolve } from "node:path";
 import {
   collectGitReviewFiles,
@@ -16,19 +20,27 @@ const fileInputSchema = Type.Object({
   newContent: Type.String({ description: "Updated file content after the change." }),
 });
 
-function reviewOptions(pi: ExtensionAPI, ctx: ExtensionContext, signal?: AbortSignal): OpenReviewOptions {
+function reviewOptions(
+  pi: ExtensionAPI,
+  ctx: ExtensionContext,
+  signal?: AbortSignal,
+): OpenReviewOptions {
   return {
     cwd: ctx.cwd,
     sessionId: ctx.sessionManager.getSessionId() || undefined,
     signal,
     cleanupOnExit: true,
     onFinished: async (review, formattedReview) => {
-      const decision = review.status === "approved" ? "approved with LGTM" : "returned with review comments";
-      pi.sendUserMessage([
-        `The browser LGTM review was ${decision}. Continue using the synced result below.`,
-        "",
-        formattedReview,
-      ].join("\n"), { deliverAs: "followUp" });
+      const decision =
+        review.status === "approved" ? "approved with LGTM" : "returned with review comments";
+      pi.sendUserMessage(
+        [
+          `The browser LGTM review was ${decision}. Continue using the synced result below.`,
+          "",
+          formattedReview,
+        ].join("\n"),
+        { deliverAs: "followUp" },
+      );
     },
   };
 }
@@ -41,15 +53,17 @@ async function openFromPi(
 ) {
   const pointer = await openReview(input, reviewOptions(pi, ctx, signal));
   return {
-    content: [{
-      type: "text" as const,
-      text: [
-        `Opened LGTM review: ${pointer.name}`,
-        `URL: ${pointer.url}`,
-        `Review JSON: ${pointer.reviewPath}`,
-        "The reviewer can send comments or approve with LGTM.",
-      ].join("\n"),
-    }],
+    content: [
+      {
+        type: "text" as const,
+        text: [
+          `Opened LGTM review: ${pointer.name}`,
+          `URL: ${pointer.url}`,
+          `Review JSON: ${pointer.reviewPath}`,
+          "The reviewer can send comments or approve with LGTM.",
+        ].join("\n"),
+      },
+    ],
     details: pointer,
   };
 }
@@ -58,13 +72,18 @@ function createOpenGitReviewTool(pi: ExtensionAPI) {
   return defineTool({
     name: "lgtm-open-git-review",
     label: "Open Git Review",
-    description: "Open an LGTM browser review for current staged, unstaged, and untracked text changes compared with HEAD.",
+    description:
+      "Open an LGTM browser review for current staged, unstaged, and untracked text changes compared with HEAD.",
     parameters: Type.Object({
       name: Type.Optional(Type.String({ description: "Review name. Defaults to Git review." })),
     }),
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       const files = await collectGitReviewFiles(ctx.cwd, signal);
-      return openFromPi(pi, ctx, signal, { kind: "diff", name: params.name ?? "Git review", files });
+      return openFromPi(pi, ctx, signal, {
+        kind: "diff",
+        name: params.name ?? "Git review",
+        files,
+      });
     },
   });
 }
@@ -75,12 +94,21 @@ function createOpenWorktreeReviewTool(pi: ExtensionAPI) {
     label: "Open Worktree Review",
     description: "Open an LGTM browser review for changes in another Git worktree.",
     parameters: Type.Object({
-      worktree: Type.String({ description: "Absolute path, or path relative to the current working directory, of the worktree." }),
-      name: Type.Optional(Type.String({ description: "Review name. Defaults to Worktree review." })),
+      worktree: Type.String({
+        description:
+          "Absolute path, or path relative to the current working directory, of the worktree.",
+      }),
+      name: Type.Optional(
+        Type.String({ description: "Review name. Defaults to Worktree review." }),
+      ),
     }),
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       const files = await collectGitReviewFiles(resolve(ctx.cwd, params.worktree), signal);
-      return openFromPi(pi, ctx, signal, { kind: "diff", name: params.name ?? "Worktree review", files });
+      return openFromPi(pi, ctx, signal, {
+        kind: "diff",
+        name: params.name ?? "Worktree review",
+        files,
+      });
     },
   });
 }
@@ -89,7 +117,8 @@ function createOpenCustomReviewTool(pi: ExtensionAPI) {
   return defineTool({
     name: "lgtm-open-custom-review",
     label: "Open Custom Review",
-    description: "Open an LGTM browser review from explicitly supplied original and updated file contents.",
+    description:
+      "Open an LGTM browser review from explicitly supplied original and updated file contents.",
     parameters: Type.Object({
       name: Type.String({ description: "Review name." }),
       files: Type.Array(fileInputSchema, { minItems: 1, description: "Files to review." }),
@@ -104,11 +133,14 @@ function createOpenDocumentReviewTool(pi: ExtensionAPI) {
   return defineTool({
     name: "lgtm-open-document-review",
     label: "Open Document Review",
-    description: "Render Markdown in an LGTM browser review and collect annotations on selected text.",
+    description:
+      "Render Markdown in an LGTM browser review and collect annotations on selected text.",
     parameters: Type.Object({
       name: Type.String({ description: "Review name." }),
       markdown: Type.String({ description: "Markdown source to render and annotate." }),
-      location: Type.Optional(Type.String({ description: "Optional source path or document label." })),
+      location: Type.Optional(
+        Type.String({ description: "Optional source path or document label." }),
+      ),
     }),
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       return openFromPi(pi, ctx, signal, {
@@ -129,13 +161,18 @@ function createFinishReviewTool() {
     async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
       const result = await finishReview(ctx.cwd);
       if (!result.found) {
-        return { content: [{ type: "text" as const, text: "No LGTM review was found." }], details: result };
+        return {
+          content: [{ type: "text" as const, text: "No LGTM review was found." }],
+          details: result,
+        };
       }
       return {
-        content: [{
-          type: "text" as const,
-          text: `${result.formattedReview}\n\nRaw review.json:\n\n\`\`\`json\n${JSON.stringify(result.review, null, 2)}\n\`\`\``,
-        }],
+        content: [
+          {
+            type: "text" as const,
+            text: `${result.formattedReview}\n\nRaw review.json:\n\n\`\`\`json\n${JSON.stringify(result.review, null, 2)}\n\`\`\``,
+          },
+        ],
         details: result,
       };
     },
