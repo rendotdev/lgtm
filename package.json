@@ -1,17 +1,17 @@
 {
-  "name": "@rendotdev/pi-extensions",
+  "name": "@rendotdev/pi-diff",
   "version": "0.1.0",
-  "description": "Rendotdev Pi extensions packaged for GitHub and npm installs.",
+  "description": "Pi-diff extension packaged for Pi.",
   "type": "module",
   "private": false,
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/rendotdev/pi-extensions.git"
+    "url": "git+https://github.com/rendotdev/pi-diff.git"
   },
   "bugs": {
-    "url": "https://github.com/rendotdev/pi-extensions/issues"
+    "url": "https://github.com/rendotdev/pi-diff/issues"
   },
-  "homepage": "https://github.com/rendotdev/pi-extensions#readme",
+  "homepage": "https://github.com/rendotdev/pi-diff#readme",
   "keywords": [
     "pi-package",
     "pi-extension",
@@ -19,7 +19,7 @@
   ],
   "files": [
     "README.md",
-    "extensions",
+    "extensions/pi-diff.ts",
     "tsconfig.json"
   ],
   "scripts": {
@@ -28,7 +28,7 @@
   },
   "pi": {
     "extensions": [
-      "./extensions/pi-diff.ts"
+      "extensions/pi-diff.ts"
     ]
   },
   "peerDependencies": {

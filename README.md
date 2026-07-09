@@ -1,16 +1,16 @@
-# Rendotdev Pi extensions
+# Pi-diff
 
-Rendotdev Pi extensions packaged as a Pi package.
+Pi-diff is a Pi extension for browser-based inline diff review comments.
 
 ## Install
 
-Install pi-diff from GitHub:
+Install from GitHub:
 
 ```bash
-pi install git:github.com/rendotdev/pi-extensions
+pi install git:github.com/rendotdev/pi-diff
 ```
 
-This package currently exposes only `extensions/pi-diff.ts`, so the command above installs the pi-diff extension.
+This package exposes only `extensions/pi-diff.ts`, so the command above installs the pi-diff extension.
 
 ### Install a specific extension
 
@@ -20,7 +20,7 @@ Pi installs git and npm packages at the package level. To load one extension fro
 {
   "packages": [
     {
-      "source": "git:github.com/rendotdev/pi-extensions",
+      "source": "git:github.com/rendotdev/pi-diff",
       "extensions": ["+extensions/pi-diff.ts"],
       "skills": [],
       "prompts": [],
@@ -30,9 +30,8 @@ Pi installs git and npm packages at the package level. To load one extension fro
 }
 ```
 
-For a local checkout, you can point Pi at a single extension file:
+For a local checkout, you can point Pi at the single extension file:
 
 ```bash
-pi -e /absolute/path/to/pi-extensions/extensions/pi-diff.ts
+pi -e /absolute/path/to/pi-diff/extensions/pi-diff.ts
 ```
-
