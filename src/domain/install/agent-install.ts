@@ -43,6 +43,30 @@ export class AgentInstallPlannerClass {
 
 export const agentInstallPlanner = new AgentInstallPlannerClass();
 
+export class AgentUpdatePlannerClass {
+  public createPlan(params: { target: AgentInstallTarget }): AgentInstallStep[] {
+    if (params.target !== "all") return this.stepsFor(params.target);
+    return (["pi", "claude", "codex"] as const).flatMap((target) => this.stepsFor(target));
+  }
+
+  private stepsFor(target: Exclude<AgentInstallTarget, "all">): AgentInstallStep[] {
+    if (target === "pi") {
+      return [{ target, command: "pi", args: ["update", "npm:@rendotdev/lgtm"] }];
+    }
+
+    if (target === "claude") {
+      return [
+        { target, command: "claude", args: ["plugin", "marketplace", "update", "rendotdev"] },
+        { target, command: "claude", args: ["plugin", "update", "lgtm@rendotdev"] },
+      ];
+    }
+
+    return [{ target, command: "codex", args: ["plugin", "marketplace", "upgrade", "rendotdev"] }];
+  }
+}
+
+export const agentUpdatePlanner = new AgentUpdatePlannerClass();
+
 export function isAgentInstallTarget(value: string): value is AgentInstallTarget {
   return agentInstallTargets.includes(value as AgentInstallTarget);
 }

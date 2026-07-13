@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import {
   agentInstallPlanner,
+  agentUpdatePlanner,
   type AgentInstallStep,
   type AgentInstallTarget,
 } from "../../domain/install/agent-install.ts";
@@ -36,3 +37,19 @@ async function runCommand(step: AgentInstallStep): Promise<void> {
 }
 
 export const agentInstaller = new AgentInstallerClass({ runCommand });
+
+export class AgentUpdaterClass {
+  private readonly deps: AgentInstallDependencies;
+
+  public constructor(deps: AgentInstallDependencies) {
+    this.deps = deps;
+  }
+
+  public async update(params: { target: AgentInstallTarget }): Promise<AgentInstallStep[]> {
+    const steps = agentUpdatePlanner.createPlan(params);
+    for (const step of steps) await this.deps.runCommand(step);
+    return steps;
+  }
+}
+
+export const agentUpdater = new AgentUpdaterClass({ runCommand });

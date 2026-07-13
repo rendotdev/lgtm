@@ -12,11 +12,12 @@ import {
 import type { DiffReviewFileInput, ReviewPointer } from "../../domain/review/review.ts";
 import {
   agentInstallPlanner,
+  agentUpdatePlanner,
   isAgentInstallTarget,
   type AgentInstallStep,
   type AgentInstallTarget,
 } from "../../domain/install/agent-install.ts";
-import { agentInstaller } from "../../platform/install/agent-install-platform.ts";
+import { agentInstaller, agentUpdater } from "../../platform/install/agent-install-platform.ts";
 import { runMcpServer } from "../mcp/mcp.ts";
 
 const args = process.argv.slice(2);
@@ -118,6 +119,7 @@ Usage:
   lgtm stop [--cwd <path>] [--json]
   lgtm mcp
   lgtm install [--target <all|pi|claude|codex>] [--dry-run] [--json]
+  lgtm update [--target <all|pi|claude|codex>] [--dry-run] [--json]
 
 Custom input:
   { "name": "Review name", "files": [{ "location": "file.ts", "oldContent": "", "newContent": "" }] }
@@ -125,13 +127,17 @@ Custom input:
 Document Markdown and custom JSON are read from stdin when no file is supplied.`);
 }
 
-function printInstallResult(target: AgentInstallTarget, steps: AgentInstallStep[]) {
+function printIntegrationResult(params: {
+  action: "install" | "update";
+  target: AgentInstallTarget;
+  steps: AgentInstallStep[];
+}) {
   if (jsonOutput) {
-    console.log(JSON.stringify({ target, steps }, null, 2));
+    console.log(JSON.stringify(params, null, 2));
     return;
   }
   console.log(
-    `Installed LGTM for ${target}. Start a new agent session to load the plugin and skill.`,
+    `${params.action === "install" ? "Installed" : "Updated"} LGTM for ${params.target}. Start a new agent session to load the plugin and skill.`,
   );
 }
 
@@ -155,10 +161,32 @@ async function main() {
     }
     const plan = agentInstallPlanner.createPlan({ target });
     if (takeFlag("--dry-run")) {
-      printInstallResult(target, plan);
+      printIntegrationResult({ action: "install", target, steps: plan });
       return;
     }
-    printInstallResult(target, await agentInstaller.install({ target }));
+    printIntegrationResult({
+      action: "install",
+      target,
+      steps: await agentInstaller.install({ target }),
+    });
+    return;
+  }
+
+  if (command === "update") {
+    const target = takeOption("--target") ?? "all";
+    if (!isAgentInstallTarget(target)) {
+      throw new Error("update --target must be one of: all, pi, claude, codex.");
+    }
+    const plan = agentUpdatePlanner.createPlan({ target });
+    if (takeFlag("--dry-run")) {
+      printIntegrationResult({ action: "update", target, steps: plan });
+      return;
+    }
+    printIntegrationResult({
+      action: "update",
+      target,
+      steps: await agentUpdater.update({ target }),
+    });
     return;
   }
 

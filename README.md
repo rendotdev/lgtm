@@ -23,11 +23,14 @@ lgtm stop
 lgtm mcp
 lgtm install
 lgtm install --target codex
+lgtm update
 ```
 
 Add `--json` for machine-readable command output and `--cwd <path>` to choose the review workspace.
 
 Run `lgtm install` to install LGTM's Pi extension, Claude Code plugin, Codex plugin, MCP configuration, and shared skill. Use `--target pi`, `--target claude`, or `--target codex` to install one integration. Add `--dry-run` to print the commands without running them.
+
+Run `lgtm update` to refresh every installed LGTM integration. It updates Pi's npm extension, Claude Code's marketplace and plugin, and Codex's marketplace snapshot. The same `--target`, `--dry-run`, and `--json` options are available.
 
 Custom reviews accept this JSON shape through `--input` or stdin:
 
