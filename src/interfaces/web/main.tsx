@@ -354,7 +354,10 @@ function App() {
       .then((nextState) => {
         if (cancelled) return;
         lastSavedSignature.current = meaningfulReviewSignature(nextState.review);
-        document.title = ReviewWindowTitle.format({ cwd: nextState.payload.cwd });
+        document.title = ReviewWindowTitle.format({
+          cwd: nextState.payload.cwd,
+          name: nextState.payload.name,
+        });
         setCollapsedFileIds(getDefaultCollapsedFileIds(nextState));
         setState(nextState);
       })
@@ -582,7 +585,7 @@ function App() {
     setRecoveryStatus(null);
     try {
       await navigator.clipboard.writeText(
-        decision === "approved" ? "LGTM" : `PTAL: ${state.payload.reviewPath}`,
+        decision === "approved" ? "approved" : `PTAL: ${state.payload.reviewPath}`,
       );
       setCopiedReviewPath(true);
     } catch (clipboardError) {
@@ -592,7 +595,7 @@ function App() {
         description: errorDescription(
           clipboardError,
           decision === "approved"
-            ? "Copy LGTM and send it to the agent."
+            ? "Copy approved and send it to the agent."
             : "Copy the review JSON path and prefix it with PTAL: before sending it to the agent.",
         ),
       });
@@ -612,7 +615,7 @@ function App() {
       setState((current) => (current ? { ...current, review: finishedReview } : current));
       window.setTimeout(() => {
         window.close();
-        const heading = decision === "approved" ? "LGTM" : "Comments sent";
+        const heading = decision === "approved" ? "Approved" : "Comments sent";
         document.body.innerHTML =
           '<main style="font-family: system-ui, sans-serif; padding: 2rem; color: #111827;"><h1>' +
           heading +
@@ -687,7 +690,7 @@ function App() {
   const hasCommentEntries = reviewHasCommentEntries(review);
   const isFinished = review.status !== "open";
   const decision = primaryDecision;
-  const decisionButtonLabel = commentCount > 0 ? `Send (${commentCount})` : "LGTM";
+  const decisionButtonLabel = commentCount > 0 ? `Send (${commentCount})` : "Approve";
   const primaryShortcutLabel = formatForDisplay("Mod+Enter");
   const savedTime = lastSavedAt
     ? lastSavedAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
