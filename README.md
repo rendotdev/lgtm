@@ -30,7 +30,7 @@ Add `--json` for machine-readable command output and `--cwd <path>` to choose th
 
 Run `lgtm install` to install LGTM's Pi extension, Claude Code plugin, Codex plugin, MCP configuration, and shared skill. Use `--target pi`, `--target claude`, or `--target codex` to install one integration. Add `--dry-run` to print the commands without running them.
 
-Run `lgtm update` to refresh every installed LGTM integration. It updates Pi's npm extension, Claude Code's marketplace and plugin, and Codex's marketplace snapshot. The same `--target`, `--dry-run`, and `--json` options are available.
+Run `lgtm update` to update the globally installed LGTM CLI and refresh every installed LGTM integration. The CLI updates through the npm executable and prefix that own the active `lgtm` command. It also updates Pi's npm extension, Claude Code's marketplace and plugin, and Codex's marketplace snapshot. The same `--target`, `--dry-run`, and `--json` options are available. Local and `npx` runs skip the CLI update.
 
 Custom reviews accept this JSON shape through `--input` or stdin:
 

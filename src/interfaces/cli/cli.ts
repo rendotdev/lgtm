@@ -18,6 +18,7 @@ import {
   type AgentInstallTarget,
 } from "../../domain/install/agent-install.ts";
 import { agentInstaller, agentUpdater } from "../../platform/install/agent-install-platform.ts";
+import { cliUpdater, type CliUpdateResult } from "../../platform/install/cli-update-platform.ts";
 import { runMcpServer } from "../mcp/mcp.ts";
 
 const args = process.argv.slice(2);
@@ -132,13 +133,16 @@ function printIntegrationResult(params: {
   target: AgentInstallTarget;
   steps: AgentInstallStep[];
   skippedTargets?: Exclude<AgentInstallTarget, "all">[];
+  cli?: CliUpdateResult;
 }) {
   if (jsonOutput) {
     console.log(JSON.stringify(params, null, 2));
     return;
   }
+  if (params.cli?.status === "updated") console.log("Updated the LGTM CLI.");
+  if (params.cli?.status === "skipped") console.log(`Skipped CLI update: ${params.cli.reason}`);
   console.log(
-    `${params.action === "install" ? "Installed" : "Updated"} LGTM for ${params.target}. Start a new agent session to load the plugin and skill.`,
+    `${params.action === "install" ? "Installed" : "Updated"} LGTM integrations for ${params.target}. Start a new agent session to load the plugin and skill.`,
   );
   if (params.skippedTargets?.length) {
     console.log(`Skipped uninstalled integrations: ${params.skippedTargets.join(", ")}.`);
@@ -183,12 +187,13 @@ async function main() {
     }
     const plan = agentUpdatePlanner.createPlan({ target });
     if (takeFlag("--dry-run")) {
-      printIntegrationResult({ action: "update", target, steps: plan });
+      printIntegrationResult({ action: "update", target, steps: plan, cli: cliUpdater.plan() });
       return;
     }
     printIntegrationResult({
       action: "update",
       target,
+      cli: await cliUpdater.update(),
       ...(await agentUpdater.update({ target })),
     });
     return;
