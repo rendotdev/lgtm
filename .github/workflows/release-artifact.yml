@@ -24,12 +24,13 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Set up Node.js
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+      - name: Set up Vite+
+        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
         with:
-          node-version: 22.18.0
-          cache: npm
-          package-manager-cache: true
+          node-version-file: .node-version
+          cache: true
+          run-install: |
+            - args: ["--frozen-lockfile"]
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
@@ -42,20 +43,14 @@ jobs:
           package_version=$(node -p "require('./package.json').version")
           test "${GITHUB_REF_NAME}" = "v${package_version}"
 
-      - name: Set up npm
-        run: npm install --global npm@11.12.1
-
-      - name: Install dependencies
-        run: npm ci
-
       - name: Check formatting, lint, and types
-        run: npx vp check
+        run: vp check
 
       - name: Run tests
-        run: npx vp test
+        run: vp test
 
       - name: Build package
-        run: npx vp run package
+        run: vp run package
 
       - name: Check plugin metadata
         if: ${{ hashFiles('scripts/sync-plugin-metadata.ts') != '' }}
