@@ -1,47 +1,98 @@
 {
-  "name": "@rendotdev/pi-diff",
+  "name": "@rendotdev/lgtm",
   "version": "0.1.0",
-  "description": "Pi-diff extension packaged for Pi.",
-  "type": "module",
   "private": false,
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/rendotdev/pi-diff.git"
-  },
-  "bugs": {
-    "url": "https://github.com/rendotdev/pi-diff/issues"
-  },
-  "homepage": "https://github.com/rendotdev/pi-diff#readme",
+  "description": "Human approval for agent work, with code diff and Markdown review.",
   "keywords": [
-    "pi-package",
-    "pi-extension",
+    "ai-agents",
+    "code-review",
+    "human-in-the-loop",
     "rendotdev"
   ],
-  "files": [
-    "README.md",
-    "extensions/pi-diff.ts",
-    "tsconfig.json"
-  ],
-  "scripts": {
-    "check": "tsc --noEmit",
-    "pack:dry": "npm pack --dry-run"
+  "homepage": "https://github.com/rendotdev/lgtm#readme",
+  "bugs": {
+    "url": "https://github.com/rendotdev/lgtm/issues"
   },
-  "pi": {
-    "extensions": [
-      "extensions/pi-diff.ts"
-    ]
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rendotdev/lgtm.git"
+  },
+  "bin": {
+    "lgtm": "bin/lgtm.mjs"
+  },
+  "files": [
+    ".agents/plugins/marketplace.json",
+    ".claude-plugin",
+    ".codex-plugin/plugin.json",
+    ".mcp.claude.json",
+    ".mcp.json",
+    "bin",
+    "dist",
+    "skills",
+    "LICENSE",
+    "README.md"
+  ],
+  "type": "module",
+  "scripts": {
+    "lgtm": "node src/interfaces/cli/cli.ts",
+    "metadata:check": "bun scripts/sync-plugin-metadata.ts --check",
+    "metadata:sync": "bun scripts/sync-plugin-metadata.ts",
+    "pack:dry": "npm pack --dry-run",
+    "prepack": "npm run metadata:check && vp run package",
+    "release:patch": "bun scripts/release.ts patch",
+    "release:minor": "bun scripts/release.ts minor",
+    "release:major": "bun scripts/release.ts major"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-ai": "^0.80.6",
+    "@earendil-works/pi-coding-agent": "^0.80.6",
+    "@fontsource-variable/geist": "^5.2.9",
+    "@fontsource-variable/geist-mono": "^5.2.8",
+    "@heroui/react": "^3.2.2",
+    "@heroui/styles": "^3.2.2",
+    "@pierre/diffs": "^1.2.12",
+    "@tailwindcss/typography": "^0.5.19",
+    "@tailwindcss/vite": "^4.3.2",
+    "@tanstack/react-form": "^1.33.1",
+    "@tanstack/react-virtual": "^3.14.5",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "lucide-react": "^1.23.0",
+    "motion": "^12.42.2",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
+    "tailwindcss": "^4.3.2",
+    "vite": "npm:@voidzero-dev/vite-plus-core@0.2.4",
+    "vite-plus": "0.2.4"
   },
   "peerDependencies": {
     "@earendil-works/pi-ai": "*",
     "@earendil-works/pi-coding-agent": "*"
   },
-  "devDependencies": {
-    "@earendil-works/pi-ai": "^0.80.3",
-    "@earendil-works/pi-coding-agent": "^0.80.3",
-    "@types/node": "^24.0.0",
-    "typescript": "^5.8.3"
+  "peerDependenciesMeta": {
+    "@earendil-works/pi-ai": {
+      "optional": true
+    },
+    "@earendil-works/pi-coding-agent": {
+      "optional": true
+    }
+  },
+  "overrides": {
+    "vite": "npm:@voidzero-dev/vite-plus-core@0.2.4"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22.18.0"
+  },
+  "packageManager": "npm@11.12.1",
+  "pi": {
+    "extensions": [
+      "dist/pi/lgtm.mjs"
+    ],
+    "skills": [
+      "skills"
+    ]
   }
 }
