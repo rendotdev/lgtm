@@ -9,7 +9,7 @@ import {
   serveReviewApp,
   stopReviews,
 } from "../../platform/review/review-platform.ts";
-import type { DiffReviewFileInput, ReviewPointer } from "../../domain/review/review.ts";
+import type { ReviewPointer } from "../../domain/review/review.ts";
 import {
   agentInstallPlanner,
   agentUpdatePlanner,
@@ -20,10 +20,16 @@ import {
 import { agentInstaller, agentUpdater } from "../../platform/install/agent-install-platform.ts";
 import { cliUpdater, type CliUpdateResult } from "../../platform/install/cli-update-platform.ts";
 import { runMcpServer } from "../mcp/mcp.ts";
+import { jsonReviewInputParser } from "./json-review-input.ts";
 
 const args = process.argv.slice(2);
 if (args[0] === "--") args.shift();
-const command = args.shift() ?? "help";
+const helpRequested = args.includes("--help") || args.includes("-h");
+const command = helpRequested
+  ? "help"
+  : args[0] && !args[0].startsWith("--")
+    ? (args.shift() as string)
+    : "git";
 const jsonOutput = takeFlag("--json");
 const cwd = resolve(takeOption("--cwd") ?? process.cwd());
 const cancellation = new AbortController();
@@ -89,43 +95,29 @@ async function readInput(path: string | undefined) {
   return path ? await readFile(resolve(cwd, path), "utf8") : await readStdin();
 }
 
-function assertFiles(value: unknown): asserts value is DiffReviewFileInput[] {
-  if (!Array.isArray(value) || value.length === 0)
-    throw new Error("Custom review input requires a non-empty files array.");
-  for (const file of value) {
-    if (!file || typeof file !== "object")
-      throw new Error("Every custom review file must be an object.");
-    const candidate = file as Record<string, unknown>;
-    if (
-      typeof candidate.location !== "string" ||
-      typeof candidate.oldContent !== "string" ||
-      typeof candidate.newContent !== "string"
-    ) {
-      throw new Error(
-        "Every custom review file requires location, oldContent, and newContent strings.",
-      );
-    }
-  }
-}
-
 function printHelp() {
   console.log(`LGTM, human approval for agent work
 
 Usage:
+  lgtm [--name <name>] [--cwd <path>] [--json]
   lgtm git [--name <name>] [--cwd <path>] [--json]
   lgtm worktree <path> [--name <name>] [--cwd <path>] [--json]
-  lgtm custom [--input <review.json>] [--name <name>] [--cwd <path>] [--json]
+  lgtm json [review.json] [--name <name>] [--cwd <path>] [--json]
   lgtm document [markdown-file] [--name <name>] [--cwd <path>] [--json]
   lgtm finish [--cwd <path>] [--json]
-  lgtm stop [--cwd <path>] [--json]
   lgtm mcp
   lgtm setup [--target <all|pi|claude|codex>] [--dry-run] [--json]
   lgtm update [--target <all|pi|claude|codex>] [--dry-run] [--json]
 
-Custom input:
-  { "name": "Review name", "files": [{ "location": "file.ts", "oldContent": "", "newContent": "" }] }
+JSON review schema:
+  {
+    "name": "Review name",
+    "files": [
+      { "location": "file.ts", "oldContent": "before", "newContent": "after" }
+    ]
+  }
 
-Document Markdown and custom JSON are read from stdin when no file is supplied.`);
+Bare lgtm reviews the current Git changes. Document Markdown and review JSON are read from stdin when no file is supplied.`);
 }
 
 function printIntegrationResult(params: {
@@ -199,7 +191,7 @@ async function main() {
     return;
   }
 
-  if (command === "help" || command === "--help" || command === "-h") {
+  if (command === "help") {
     printHelp();
     return;
   }
@@ -220,17 +212,14 @@ async function main() {
     return;
   }
 
-  if (command === "custom") {
-    const inputPath = takeOption("--input");
-    const parsed = JSON.parse(await readInput(inputPath)) as
-      | { name?: unknown; files?: unknown }
-      | unknown[];
-    const files = Array.isArray(parsed) ? parsed : parsed.files;
-    assertFiles(files);
-    const inputName = Array.isArray(parsed) ? undefined : parsed.name;
-    const name =
-      takeOption("--name") ?? (typeof inputName === "string" ? inputName : "Custom review");
-    printPointer(await openReview({ kind: "diff", name, files }, reviewOptions()));
+  if (command === "json" || command === "custom") {
+    const positionalInput = args[0]?.startsWith("--") ? undefined : args.shift();
+    const inputPath = takeOption("--input") ?? positionalInput;
+    const input = jsonReviewInputParser.parse({
+      value: JSON.parse(await readInput(inputPath)) as unknown,
+    });
+    const name = takeOption("--name") ?? input.name ?? "JSON review";
+    printPointer(await openReview({ kind: "diff", name, files: input.files }, reviewOptions()));
     return;
   }
 
@@ -265,11 +254,12 @@ async function main() {
   }
 
   if (command === "stop") {
-    const stopped = await stopReviews(cwd);
-    if (jsonOutput) console.log(JSON.stringify({ stopped }));
+    const result = await finishReview(cwd);
+    if (jsonOutput) console.log(JSON.stringify(result, null, 2));
+    else if (!result.found) console.log("No LGTM review found.");
     else
       console.log(
-        stopped ? "Stopped the LGTM review server." : "No running LGTM review server found.",
+        `${result.formattedReview}\n\nServer stopped: ${result.stoppedServer ? "yes" : "no"}`,
       );
     return;
   }
