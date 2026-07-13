@@ -91,12 +91,13 @@ jobs:
           compression-level: 0
 
   release:
-    name: Attach release artifact
+    name: Publish release artifact
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
       contents: write
+      id-token: write
 
     steps:
       - name: Download validated artifact
@@ -107,6 +108,9 @@ jobs:
 
       - name: Verify downloaded checksum
         run: sha256sum --check artifacts/*.sha256
+
+      - name: Publish npm package
+        run: npm publish artifacts/*.tgz --access public
 
       - name: Attach artifact to GitHub release
         uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3
