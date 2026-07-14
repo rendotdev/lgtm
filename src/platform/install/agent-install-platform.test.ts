@@ -81,12 +81,31 @@ describe("AgentUpdaterClass", () => {
         },
       ],
       skippedTargets: [],
-      integrations: [{ target: "codex", outputs: ["Codex marketplace updated.\n"] }],
+      integrations: [
+        {
+          target: "codex",
+          steps: [
+            {
+              target: "codex",
+              command: "codex",
+              args: ["plugin", "marketplace", "upgrade", "rendotdev"],
+            },
+          ],
+          outputs: ["Codex marketplace updated.\n"],
+        },
+      ],
     });
     expect(onUpdate).toHaveBeenNthCalledWith(1, { phase: "started", target: "codex" });
     expect(onUpdate).toHaveBeenNthCalledWith(2, {
       phase: "completed",
       target: "codex",
+      steps: [
+        {
+          target: "codex",
+          command: "codex",
+          args: ["plugin", "marketplace", "upgrade", "rendotdev"],
+        },
+      ],
       outputs: ["Codex marketplace updated.\n"],
     });
   });

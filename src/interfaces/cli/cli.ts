@@ -241,7 +241,11 @@ async function main() {
           }
           report.complete({
             label: `Updated CLI: ${cli.previousVersion} to ${cli.version}`,
-            detail: CommandUiRenderer.formatLogGroup({ outputs: [cli.output] }),
+            detail: CommandUiRenderer.formatCommandOutputGroups({
+              steps: [cli.step],
+              outputs: [cli.output],
+            }),
+            mutedDetail: true,
           });
         } else if (cliPlan.status === "current") {
           cli = cliPlan;
@@ -251,6 +255,7 @@ async function main() {
           report.complete({ label: "CLI update unavailable", detail: `  ${cliPlan.reason}` });
         }
 
+        report("Checking integrations");
         const integrations = await AgentUpdater.update({
           target,
           onUpdate: function onUpdate(event) {
@@ -262,7 +267,11 @@ async function main() {
             }
             report.complete({
               label,
-              detail: CommandUiRenderer.formatLogGroup({ outputs: event.outputs }),
+              detail: CommandUiRenderer.formatCommandOutputGroups({
+                steps: event.steps,
+                outputs: event.outputs,
+              }),
+              mutedDetail: true,
             });
           },
         });

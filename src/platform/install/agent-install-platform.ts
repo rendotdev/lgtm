@@ -24,6 +24,7 @@ export type AgentUpdateResult = {
   skippedTargets: Exclude<AgentInstallTarget, "all">[];
   integrations: {
     target: Exclude<AgentInstallTarget, "all">;
+    steps: AgentInstallStep[];
     outputs: string[];
   }[];
 };
@@ -33,6 +34,7 @@ export type AgentUpdateEvent =
   | {
       phase: "completed";
       target: Exclude<AgentInstallTarget, "all">;
+      steps: AgentInstallStep[];
       outputs: string[];
     };
 
@@ -111,8 +113,13 @@ export class AgentUpdaterClass extends DomainClass<{}, AgentUpdateDependencies> 
         steps.push(step);
         outputs.push(await this.deps.runCommand(step));
       }
-      integrations.push({ target: integration.target, outputs });
-      params.onUpdate?.({ phase: "completed", target: integration.target, outputs });
+      integrations.push({ target: integration.target, steps: integrationSteps, outputs });
+      params.onUpdate?.({
+        phase: "completed",
+        target: integration.target,
+        steps: integrationSteps,
+        outputs,
+      });
     }
     return { steps, skippedTargets, integrations };
   }

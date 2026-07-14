@@ -166,12 +166,31 @@ describe("CommandUiRendererClass", () => {
         report("Updating CLI");
         report.complete({
           label: "Updated CLI: 0.1.12 to 0.2.0",
-          detail: Renderer.formatLogGroup({ outputs: ["added 1 package\nchanged 1 package\n"] }),
+          detail: Renderer.formatCommandOutputGroups({
+            steps: [
+              {
+                command: "/runtime/bin/npm",
+                args: ["install", "--global", "@rendotdev/lgtm@0.2.0"],
+              },
+            ],
+            outputs: ["added 1 package\nchanged 1 package\n"],
+          }),
+          mutedDetail: true,
         });
+        report("Checking integrations");
         report("Updating integration: Claude Code");
         report.complete({
           label: "Updating integration: Claude Code",
-          detail: Renderer.formatLogGroup({ outputs: ["Updated marketplace.\n"] }),
+          detail: Renderer.formatCommandOutputGroups({
+            steps: [
+              {
+                command: "claude",
+                args: ["plugin", "marketplace", "update", "rendotdev"],
+              },
+            ],
+            outputs: ["Updated marketplace.\n"],
+          }),
+          mutedDetail: true,
         });
         return undefined;
       },
@@ -185,11 +204,11 @@ describe("CommandUiRendererClass", () => {
         "✔ Current version: 0.1.12",
         "✔ Update available: 0.1.12 to 0.2.0",
         "✔ Updated CLI: 0.1.12 to 0.2.0",
-        "  Logs:",
+        "  npm install --global @rendotdev/lgtm@0.2.0",
         "    added 1 package",
         "    changed 1 package",
         "✔ Updating integration: Claude Code",
-        "  Logs:",
+        "  claude plugin marketplace update rendotdev",
         "    Updated marketplace.",
         "✔ Update finished",
         "Restart your agent session to reload lgtm integrations, or use the lgtm CLI now.",

@@ -31,7 +31,7 @@
       --color-muted-foreground,
       color-mix(in oklab, currentColor 60%, transparent)
     );
-    --typeset-rule: var(--color-border, color-mix(in oklab, currentColor 20%, transparent));
+    --typeset-rule: var(--border);
     --typeset-code-background: var(
       --default-hover,
       color-mix(in oklab, currentColor 12%, transparent)

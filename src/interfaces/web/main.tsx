@@ -1783,7 +1783,8 @@ const reviewDiffUnsafeCSS = [
   '[data-diffs-header="default"] [data-metadata] { padding-right: 0 !important; }',
   "[data-change-icon] { opacity: 0.72; transform: scale(0.9); transform-origin: center; }",
   "[data-diff-span] { border-radius: var(--review-radius) !important; }",
-  "[data-separator-content], [data-expand-button], [data-separator-wrapper] { border-radius: var(--review-radius) !important; }",
+  "[data-separator-content], [data-expand-button], [data-separator-wrapper] { border-color: var(--border) !important; border-radius: var(--review-radius) !important; }",
+  "[data-separator-wrapper] { background-color: var(--border) !important; }",
 ].join("\n");
 
 function getSelectionFromRoot(root: ShadowRoot | HTMLElement): Selection | null {

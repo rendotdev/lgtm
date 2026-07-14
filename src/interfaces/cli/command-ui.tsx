@@ -1,10 +1,11 @@
+import { basename } from "node:path";
 import { Text, render, useAnimation, type Instance } from "ink";
 import type { ReactElement } from "react";
 import { DomainClass } from "../../domain/domain-class.ts";
 import type { AgentInstallStep, AgentInstallTarget } from "../../domain/install/agent-install.ts";
 import type { CliUpdatePlan, CliUpdateResult } from "../../platform/install/cli-update-platform.ts";
+import { TerminalColors, TerminalIcons } from "./terminal-theme.ts";
 
-const brailleFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const integrationNames: Record<Exclude<AgentInstallTarget, "all">, string> = {
   pi: "Pi",
   claude: "Claude Code",
@@ -12,7 +13,7 @@ const integrationNames: Record<Exclude<AgentInstallTarget, "all">, string> = {
 };
 
 type CommandUiState = "loading" | "success" | "error";
-type CommandUiCompletedItem = { label: string; detail?: string };
+type CommandUiCompletedItem = { label: string; detail?: string; mutedDetail?: boolean };
 export type CommandUiReporter = ((label: string) => void) & {
   complete: (params: CommandUiCompletedItem) => void;
 };
@@ -34,24 +35,42 @@ export function CommandUi(props: {
   const { frame } = useAnimation({ interval: 80, isActive: props.state === "loading" });
   const symbol =
     props.state === "loading"
-      ? brailleFrames[frame % brailleFrames.length]
+      ? TerminalIcons.loading({ frame })
       : props.state === "success"
-        ? "✔"
-        : "✖";
-  const color = props.state === "success" ? "green" : props.state === "error" ? "red" : "cyan";
-  const completed = props.completed
-    ?.map(function formatCompleted(item) {
-      return `✔ ${item.label}${item.detail ? `\n${item.detail}` : ""}`;
-    })
-    .join("\n");
+        ? TerminalIcons.success
+        : TerminalIcons.error;
+  const color =
+    props.state === "success"
+      ? TerminalColors.success
+      : props.state === "error"
+        ? TerminalColors.error
+        : TerminalColors.loading;
+  const hasCompleted = Boolean(props.completed?.length);
   const current = props.label
     ? `${symbol} ${props.label}${props.detail ? `\n${props.detail}` : ""}`
     : "";
 
   return (
     <Text>
-      {completed ? <Text color="green">{completed}</Text> : null}
-      {completed && current ? "\n" : ""}
+      {props.completed?.map(function renderCompleted(item, index) {
+        return (
+          <Text key={`${index}-${item.label}`}>
+            {index > 0 ? "\n" : ""}
+            <Text color={TerminalColors.success}>
+              {TerminalIcons.success} {item.label}
+            </Text>
+            {item.detail ? (
+              <Text
+                color={item.mutedDetail ? TerminalColors.muted : TerminalColors.success}
+                dimColor={item.mutedDetail}
+              >
+                {`\n${item.detail}`}
+              </Text>
+            ) : null}
+          </Text>
+        );
+      })}
+      {hasCompleted && current ? "\n" : ""}
       {current ? <Text color={color}>{current}</Text> : null}
     </Text>
   );
@@ -78,7 +97,11 @@ export class CommandUiRendererClass extends DomainClass<
       });
       const result = await params.execute(reporter);
       const detail = params.renderSuccess(result);
-      const output = [this.formatCompleted({ completed }), `✔ ${successLabel}`, detail]
+      const output = [
+        this.formatCompleted({ completed }),
+        `${TerminalIcons.success} ${successLabel}`,
+        detail,
+      ]
         .filter(Boolean)
         .join("\n");
       this.deps.stdout.write(`${output}\n`);
@@ -136,7 +159,9 @@ export class CommandUiRendererClass extends DomainClass<
   }
 
   public formatChecklist(params: { lines: string[] }): string {
-    return this.formatDetail({ lines: params.lines.map((line) => `✔ ${line}`) });
+    return this.formatDetail({
+      lines: params.lines.map((line) => `${TerminalIcons.success} ${line}`),
+    });
   }
 
   public createSilentReporter(): CommandUiReporter {
@@ -150,22 +175,27 @@ export class CommandUiRendererClass extends DomainClass<
     return integrationNames[params.target];
   }
 
-  public formatLogGroup(params: { outputs: string[] }): string | undefined {
-    const lines = params.outputs
-      .flatMap(function splitOutput(output) {
-        return output.trim().split("\n");
-      })
-      .filter(function removeEmptyLines(line) {
-        return line.trim().length > 0;
-      });
-    if (lines.length === 0) {
+  public formatCommandOutputGroups(params: {
+    steps: { command: string; args: string[] }[];
+    outputs: string[];
+  }): string | undefined {
+    const groups = params.steps.flatMap(function formatStep(step, index) {
+      const output = params.outputs[index]?.trim();
+      if (!output) {
+        return [];
+      }
+      const command = [basename(step.command), ...step.args].join(" ");
+      return [
+        `  ${command}`,
+        ...output.split("\n").map(function indent(line) {
+          return `    ${line}`;
+        }),
+      ];
+    });
+    if (groups.length === 0) {
       return undefined;
     }
-    return `  Logs:\n${lines
-      .map(function indent(line) {
-        return `    ${line}`;
-      })
-      .join("\n")}`;
+    return groups.join("\n");
   }
 
   public formatIntegrationResult(params: {
@@ -240,7 +270,7 @@ export class CommandUiRendererClass extends DomainClass<
   private formatCompleted(params: { completed: CommandUiCompletedItem[] }): string {
     return params.completed
       .map(function formatItem(item) {
-        return `✔ ${item.label}${item.detail ? `\n${item.detail}` : ""}`;
+        return `${TerminalIcons.success} ${item.label}${item.detail ? `\n${item.detail}` : ""}`;
       })
       .join("\n");
   }
