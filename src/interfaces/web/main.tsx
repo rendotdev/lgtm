@@ -62,8 +62,8 @@ import { LgtmPreferences, type DiffStyle } from "../../domain/preferences/prefer
 import { ReviewHandoff } from "../../domain/review/review-handoff.ts";
 import { CommentDraft } from "./comment-draft.ts";
 import { PreferencesApi } from "./preferences-api.ts";
-import { ReviewServerMonitor } from "./review-server-monitor.ts";
 import { ToastNotifications } from "./toast-notifications.ts";
+import { useReviewServerMonitor } from "./use-review-server-monitor.ts";
 import { ReviewWindowTitle } from "./window-title.ts";
 
 type ReviewSourceFile = {
@@ -403,17 +403,12 @@ function App() {
     ToastNotifications.reviewUnavailable();
   }, [reviewStateQuery.error]);
 
-  useEffect(() => {
-    ReviewServerMonitor.start({
-      getCommentCount: function getCommentCount() {
-        const review = latestReviewRef.current;
-        return review === null ? 0 : reviewCommentCount(review);
-      },
-    });
-    return function stopReviewServerMonitor() {
-      ReviewServerMonitor.stop();
-    };
-  }, []);
+  useReviewServerMonitor({
+    getCommentCount: function getCommentCount() {
+      const review = latestReviewRef.current;
+      return review === null ? 0 : reviewCommentCount(review);
+    },
+  });
 
   const isLoaded = state !== null;
   useLayoutEffect(() => {
