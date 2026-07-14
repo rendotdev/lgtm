@@ -62,6 +62,7 @@ import { LgtmPreferences, type DiffStyle } from "../../domain/preferences/prefer
 import { ReviewHandoff } from "../../domain/review/review-handoff.ts";
 import { CommentDraft } from "./comment-draft.ts";
 import { PreferencesApi } from "./preferences-api.ts";
+import { ReviewServerMonitor } from "./review-server-monitor.ts";
 import { ToastNotifications } from "./toast-notifications.ts";
 import { ReviewWindowTitle } from "./window-title.ts";
 
@@ -334,6 +335,8 @@ function App() {
   const [collapsedFileIds, setCollapsedFileIds] = useState<Set<string>>(() => new Set());
   const reviewHeaderRef = useRef<HTMLElement | null>(null);
   const lastSavedSignature = useRef<string | null>(null);
+  const latestReviewRef = useRef<ReviewJson | null>(null);
+  latestReviewRef.current = state?.review ?? null;
   const preferencesQuery = useQuery({
     queryKey: ["preferences"],
     queryFn: () => PreferencesApi.get(),
@@ -399,6 +402,18 @@ function App() {
     }
     ToastNotifications.reviewUnavailable();
   }, [reviewStateQuery.error]);
+
+  useEffect(() => {
+    ReviewServerMonitor.start({
+      getCommentCount: function getCommentCount() {
+        const review = latestReviewRef.current;
+        return review === null ? 0 : reviewCommentCount(review);
+      },
+    });
+    return function stopReviewServerMonitor() {
+      ReviewServerMonitor.stop();
+    };
+  }, []);
 
   const isLoaded = state !== null;
   useLayoutEffect(() => {
