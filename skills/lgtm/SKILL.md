@@ -1,15 +1,15 @@
 ---
 name: lgtm
-description: Open a local LGTM browser checkpoint so a human can approve agent work or leave contextual comments, then continue the original task from that decision. Use when the user asks for LGTM, `lgtm review`, PTAL, review, approval, a browser diff, document annotations, or a human checkpoint before completion.
+description: Open a local LGTM review for code or Markdown, wait for a human decision, then continue the task from that result. Use when the user asks for LGTM, `lgtm review`, PTAL, review, approval, a browser diff, document annotations, or a human checkpoint before completion.
 ---
 
 # LGTM
 
-LGTM is a local human-review checkpoint for AI-agent work. It renders Git changes or Markdown in a browser, lets the human annotate the exact code or prose that needs attention, and returns approval, requested changes, or cancellation.
+LGTM adds a human checkpoint to an agent task. It reviews Git changes, Markdown, or explicit before-and-after content in a local browser. Reviewers can annotate exact lines and return `approved`, `changes_requested`, or `canceled`.
 
-## Start here
+## Open a review
 
-Prefer the bundled MCP tools when they are available. They keep the tool call open until the human decides, return the structured result directly, and stop the local server:
+Use the bundled MCP tools when they are available. They wait for the human's decision, return the result directly, and stop the local server when the review reaches a terminal state.
 
 - `open_git_review`
 - `open_worktree_review`
@@ -17,13 +17,11 @@ Prefer the bundled MCP tools when they are available. They keep the tool call op
 - `open_document_review`
 - `finish_review`
 
-Use the matching source-specific open tool after the work is ready and validated. Do not open a duplicate while the human is reviewing.
+Choose the tool that matches the source. Open it only after the work is ready and proportionately validated. Do not open another review for the same work while one is active.
 
-The `.lgtm/` directory contains local review state and preferences. Ensure `.lgtm/` is listed in the reviewed repository's `.gitignore` so these files are never committed.
+LGTM writes local review state and preferences to `.lgtm/`. Ensure the reviewed repository ignores that directory.
 
-When MCP tools are unavailable, running `lgtm review --name "Review current changes"` is a possible CLI path. Run `lgtm --help`, then use the equivalent command:
-
-Use one command that matches the work being reviewed:
+When MCP is unavailable, use the CLI. Run `lgtm --help` first, then choose the matching command:
 
 ```bash
 lgtm review --name "Review current changes"
@@ -33,24 +31,28 @@ lgtm review document PLAN.md --name "Review implementation plan"
 lgtm review json review.json --name "Review generated changes"
 ```
 
-Use `--since-last` after addressing feedback when the human should see only changes made after the previous compatible diff review. LGTM uses the newest approved or changes-requested review and ignores open or canceled reviews.
+`--since-last` shows changes since the newest compatible completed Git review that was approved or received changes. It ignores open and canceled reviews.
 
 - `git` reviews staged, unstaged, and untracked text changes in the selected checkout.
-- `worktree` reviews Git changes in the supplied worktree path.
-- `document` reviews a Markdown file. With no file argument, it reads Markdown from stdin.
-- `json` reads explicit before-and-after file content. Each file requires `location`, `oldContent`, and `newContent` strings. Run `lgtm --help` for the complete schema.
+- `worktree` reviews changes in the supplied worktree.
+- `document` reviews Markdown. Without a path, it reads Markdown from standard input.
+- `json` accepts explicit `location`, `oldContent`, and `newContent` fields. Run `lgtm --help` for the full schema.
 
-Add `--cwd <path>` when the review belongs to a different workspace. Add `--json` when another program needs the command result.
+Add `--cwd <path>` for another workspace and `--json` for machine-readable CLI output.
 
-## Review workflow
+## Handle the decision
 
-1. Complete a reviewable draft and run proportionate validation.
-2. Preserve the original user goal, constraints, completed work, validation evidence, and remaining steps in the current task context.
-3. Open one review with the matching MCP tool or CLI command. Do not open a duplicate while the human is reviewing.
-4. Give the human the review URL and wait. Keep the review open until they select **Approve**, **Send comments**, or **Cancel**.
-5. Interpret the result in the context of the original task:
-   - `approved` means the human approved this checkpoint. Complete any remaining requested work without reopening unchanged content.
-   - `PTAL: <path>` points to the saved `review.json`. Read that exact file, apply every actionable comment, validate the revision, and reopen when another approval is required.
-   - Cancel is not approval. Preserve the work and wait when continuing would require approval.
+1. Keep the user's goal, constraints, completed work, validation, and remaining steps in context.
+2. Open one review and give the user its URL. Wait for **Approve**, **Send comments**, or **Cancel**.
+3. Act on the result:
+   - `approved`: finish any remaining work. Do not reopen unchanged content.
+   - `PTAL: <path>`: read that exact `review.json`, address every actionable comment, validate the revision, and open a new review when approval is still needed.
+   - `canceled`: preserve the work and wait if continuing requires approval.
 
-Use `lgtm review result --review-path <path> --cwd <path>` after the human decides, or to recover an exact result when the automatic handoff is missing. An open result leaves its server running; `approved`, `changes_requested`, and `canceled` stop only that review's server. Never read the result of an active review as part of unrelated development checks.
+If the automatic result is unavailable, recover it with:
+
+```bash
+lgtm review result --review-path <path-to-review.json> --cwd <path>
+```
+
+That command leaves an active review running. After `approved`, `changes_requested`, or `canceled`, it stops only that review's server. Do not read an active review's result as part of unrelated development work.

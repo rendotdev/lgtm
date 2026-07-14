@@ -1,10 +1,8 @@
 # lgtm
 
-> Your agent says the work is done. Take one last look.
+> Review agent work before you accept it.
 
-LGTM opens your agent's changes in a local browser. You can inspect the diff, comment on exact lines, and either approve the work or send it back with feedback.
-
-It also reviews Markdown. Plans, specifications, documentation, and other prose get the same human checkpoint as code.
+LGTM gives an agent's work a human checkpoint. It opens a local browser review of a Git diff or Markdown document, lets you leave comments on exact lines, and returns a decision the agent can act on: `approved`, `changes_requested`, or `canceled`.
 
 ## Install
 
@@ -13,31 +11,41 @@ npm install --global @rendotdev/lgtm
 lgtm setup
 ```
 
-`lgtm setup` adds the LGTM plugin and skill to Pi, Claude Code, and Codex. Set up only one integration with `--target pi`, `--target claude`, or `--target codex`.
+`lgtm setup` installs the LGTM plugin and skill for Pi, Claude Code, and Codex. To configure one integration only, pass `--target pi`, `--target claude`, or `--target codex`.
 
-## Use it
+## Review Git changes
 
-Review the current Git changes:
+Open the current working tree:
 
 ```bash
 lgtm review --name "Review current changes"
 ```
 
-`lgtm review git --name "Review current changes"` is the explicit form of the same command.
+`lgtm review git --name "Review current changes"` is the equivalent explicit command.
 
-After addressing review feedback, compare the current working tree with the most recent compatible LGTM diff review that was approved or received change requests:
+After handling feedback, review only what has changed since the latest compatible completed LGTM diff review:
 
 ```bash
 lgtm review --since-last --name "Review follow-up changes"
 ```
 
-LGTM uses the retained review payload as the baseline, so this does not modify Git or create another marker. Open and canceled reviews are ignored. When no compatible completed review exists, it falls back to the normal Git diff.
+The earlier review's retained payload becomes the baseline. LGTM neither changes Git nor adds a marker. Open and canceled reviews are ignored; without a compatible completed review, LGTM falls back to a normal Git diff.
 
-LGTM opens the review in your browser. Switch between **Unified** and **Side by side** diff layouts, toggle **Line wrap** for long lines, collapse or expand all files, choose **Approve** to approve, **Send comments** to return your feedback, or **Cancel** to stop. The review result is `approved`, `changes_requested`, or `canceled`. Each review has its own server and directory, so agents can review multiple repositories, worktrees, or checkpoints at once. LGTM saves your diff layout, line wrap, file expansion, and sidebar width preferences in `.lgtm/lgtm.jsonc` at the project root. The agent gets the result and continues from there.
+## Features
 
-Review source and comments remain available for browser refreshes for seven days. Each review has a hard expiration based on its creation time, including reviews that remain open. LGTM removes expired review files and stops their servers automatically when reviews open and when their expiration timers run; no cleanup command is required.
+- **Unified and side-by-side diffs.** Choose the view that makes a change easiest to assess.
+- **Line wrap.** Keep long lines readable without horizontal scrolling.
+- **Virtualized rendering.** Keep large reviews responsive while you move between files.
+- **Saved preferences.** LGTM stores your chosen layout, line wrapping, sidebar width, and file expansion in `.lgtm/lgtm.jsonc` at the project root.
+- **Independent reviews.** Each review has its own server and directory, so reviews for multiple repositories, worktrees, or checkpoints can stay open at once.
 
-Other useful commands:
+## Work through a review
+
+LGTM opens the review in your browser. Read the diff, add line comments where needed, then approve it, send comments, or cancel. The agent receives that result and can continue from it.
+
+Review source and comments remain available for browser refreshes for seven days. Reviews expire seven days after creation, even if they are still open; LGTM removes their files and stops their servers automatically.
+
+## Review other sources
 
 ```bash
 lgtm review worktree ../feature-worktree --name "Review feature worktree"
@@ -47,7 +55,7 @@ lgtm review result --review-path .lgtm/<review-id>/review.json
 lgtm update
 ```
 
-JSON reviews use explicit before-and-after file content:
+A JSON review supplies the before and after content directly:
 
 ```json
 {
@@ -62,23 +70,23 @@ JSON reviews use explicit before-and-after file content:
 }
 ```
 
-`lgtm review result` always requires the exact `Review JSON` path printed when opening a review. It leaves an open review running and stops only that review's server after `approved`, `changes_requested`, or `canceled`: `lgtm review result --review-path .lgtm/<review-id>/review.json`.
+`lgtm review result` requires the exact `Review JSON` path printed when the review opens. If that review is still open, the command leaves its server running. Once the result is `approved`, `changes_requested`, or `canceled`, it stops only that review's server.
 
-`lgtm update` updates the CLI and every installed agent integration. Add `--json` for machine-readable output, `--cwd <path>` to choose another workspace, or `--dry-run` to preview install and update commands.
+`lgtm update` updates the CLI and every installed integration. Use `--json` for machine-readable output, `--cwd <path>` for another workspace, or `--dry-run` to see the install and update commands without running them.
 
-## Ask your agent
+## Ask an agent to use LGTM
 
-LGTM works best as the final step in an agent task. Try a prompt like this:
+Request a review after the implementation and tests are complete:
 
 ```text
-Make the change, test it, then run `lgtm review --name "Review current changes"` so I can approve or comment before you finish.
+Make the change, test it, then run `lgtm review --name "Review current changes"` so I can approve it or leave comments before you finish.
 ```
 
-The shared skill teaches agents how to open the right review and continue after your decision. The same npm package carries the CLI, browser app, Pi extension, Claude Code plugin, Codex plugin, MCP server, and skill.
+The package includes the CLI, browser app, agent integrations, MCP server, and the shared skill that tells agents which review to open and how to handle its result.
 
 ## Manual agent setup
 
-Most people only need `lgtm setup`. These commands are here when you want to set up one agent yourself.
+Use these commands only when you want to install an integration yourself instead of running `lgtm setup`.
 
 ### Pi
 
@@ -115,7 +123,7 @@ vp test
 npm run lgtm -- --help
 ```
 
-`vp dev` starts the browser app with hot reload and uses the current workspace as its temporary review API. Set `LGTM_DEV_CWD=/path/to/repo` to review another workspace.
+`vp dev` starts the browser app with hot reload and uses the current workspace for its temporary review API. Set `LGTM_DEV_CWD=/path/to/repo` to review another workspace.
 
 The code has three tiers:
 
@@ -126,4 +134,4 @@ src/
   platform/    Git, filesystem, process, HTTP, and browser integration
 ```
 
-Run `npm run metadata:sync` after changing the package version. To prepare a release, use `npm run release:patch`, `npm run release:minor`, or `npm run release:major`. The release script validates the project, updates plugin metadata, creates the release commit, and adds the matching tag. It leaves pushing and npm publication to you.
+Run `npm run metadata:sync` after changing the package version. For a release, use `npm run release:patch`, `npm run release:minor`, or `npm run release:major`. The release script validates the project, updates plugin metadata, creates the release commit, and adds the matching tag. It does not push or publish.
