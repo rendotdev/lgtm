@@ -85,12 +85,28 @@ try {
   const packageRoot = join(extractionDirectory, "package");
   const packageJson = JSON.parse(await readFile(join(packageRoot, "package.json"), "utf8")) as {
     bin?: Record<string, string>;
+    name?: string;
     pi?: { extensions?: string[]; skills?: string[] };
     scripts?: Record<string, string>;
+    version?: string;
+  };
+  const codexMcpJson = JSON.parse(await readFile(join(packageRoot, ".mcp.json"), "utf8")) as {
+    mcpServers?: { lgtm?: { args?: string[]; command?: string; cwd?: string } };
   };
 
   if (packageJson.bin?.lgtm !== "bin/lgtm.mjs") {
     throw new Error('package.json must map bin.lgtm to "bin/lgtm.mjs"');
+  }
+
+  const codexMcpServer = codexMcpJson.mcpServers?.lgtm;
+  if (codexMcpServer?.command !== "npx") {
+    throw new Error('Codex MCP server must use "npx" so source-installed plugins can start.');
+  }
+  if (codexMcpServer.args?.join(" ") !== `-y ${packageJson.name}@${packageJson.version} mcp`) {
+    throw new Error("Codex MCP server must run the current published LGTM package version");
+  }
+  if (codexMcpServer.cwd !== undefined) {
+    throw new Error("Codex MCP server must not depend on a local dist/ directory");
   }
 
   const piExtension = packageJson.pi?.extensions?.[0];

@@ -36,6 +36,10 @@ const updates: Array<{ path: string; update: (json: JsonObject) => void }> = [
     update: (json) => updateNpmMarketplace(json, packageName, packageVersion, true),
   },
   {
+    path: ".mcp.json",
+    update: (json) => updateCodexMcp(json, packageName, packageVersion),
+  },
+  {
     path: ".agents/plugins/marketplace.json",
     update: (json) => updateLocalMarketplace(json),
   },
@@ -90,6 +94,20 @@ function updateLocalMarketplace(json: JsonObject) {
   const plugin = findLgtmMarketplacePlugin(json);
   plugin.source = { source: "local", path: "." };
   delete plugin.version;
+}
+
+function updateCodexMcp(json: JsonObject, expectedPackage: string, expectedVersion: string) {
+  const mcpServers = json.mcpServers;
+  if (!isJsonObject(mcpServers)) {
+    throw new Error("MCP config must define mcpServers.");
+  }
+  const lgtmServer = mcpServers.lgtm;
+  if (!isJsonObject(lgtmServer)) {
+    throw new Error("MCP config must define an lgtm server.");
+  }
+  lgtmServer.command = "npx";
+  lgtmServer.args = ["-y", `${expectedPackage}@${expectedVersion}`, "mcp"];
+  delete lgtmServer.cwd;
 }
 
 function findLgtmMarketplacePlugin(json: JsonObject): JsonObject {

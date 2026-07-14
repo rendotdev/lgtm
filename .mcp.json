@@ -1,9 +1,8 @@
 {
   "mcpServers": {
     "lgtm": {
-      "command": "node",
-      "args": ["./dist/cli.mjs", "mcp"],
-      "cwd": "."
+      "command": "npx",
+      "args": ["-y", "@rendotdev/lgtm@0.1.16", "mcp"]
     }
   }
 }
