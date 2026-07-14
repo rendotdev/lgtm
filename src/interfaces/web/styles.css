@@ -111,21 +111,8 @@ body {
   border-radius: 0 var(--vercel-radius) var(--vercel-radius) 0 !important;
 }
 
-:where(
-  .button,
-  .close-button,
-  .input-group,
-  .input-group__prefix,
-  .input-group__suffix,
-  .textarea,
-  .tooltip__trigger,
-  .alert-dialog__trigger,
-  .disclosure__indicator,
-  .disclosure__content,
-  .toast__close-button
-) {
-  transition-duration: var(--motion-duration) !important;
-  transition-timing-function: var(--motion-ease) !important;
+:where(*, *::before, *::after) {
+  transition: none !important;
 }
 
 :where(
