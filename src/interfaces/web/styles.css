@@ -112,11 +112,7 @@ body {
 }
 
 :where(*, *::before, *::after) {
-  transition-property:
-    color, background-color, border-color, outline-color, text-decoration-color, fill, stroke,
-    box-shadow;
-  transition-duration: var(--motion-duration) !important;
-  transition-timing-function: var(--motion-ease) !important;
+  transition: none !important;
 }
 
 :where(
