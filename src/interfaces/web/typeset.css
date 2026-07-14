@@ -32,6 +32,10 @@
       color-mix(in oklab, currentColor 60%, transparent)
     );
     --typeset-rule: var(--color-border, color-mix(in oklab, currentColor 20%, transparent));
+    --typeset-code-background: var(
+      --default-hover,
+      color-mix(in oklab, currentColor 12%, transparent)
+    );
   }
 
   .typeset *:not(:where(.not-typeset, [data-not-typeset], .not-typeset *, [data-not-typeset] *)) {
@@ -256,16 +260,17 @@
 
     /* Inline code. */
     &:where(:not(pre) > code) {
-      background-color: var(--color-muted, color-mix(in oklab, currentColor 8%, transparent));
+      background-color: var(--typeset-code-background);
       font-family: var(--typeset-font-mono);
       font-size: 0.85em;
       border-radius: min(calc(var(--radius, 0.5em) * 0.6), 0.35em);
-      padding: 0.125em 0.3em;
+      margin-inline: 0.25em;
+      padding: 0.125em 0.45em;
     }
 
     /* Code blocks. */
     &:where(pre) {
-      background-color: var(--color-muted, color-mix(in oklab, currentColor 8%, transparent));
+      background-color: var(--typeset-code-background);
       font-family: var(--typeset-font-mono);
       font-size: 0.875em;
       line-height: 1.5;
