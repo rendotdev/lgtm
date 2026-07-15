@@ -34,17 +34,17 @@ jobs:
             - args: ["--frozen-lockfile"]
 
       - name: Check formatting, lint, and types
-        run: bun run check
+        run: vp check
 
       - name: Build package
-        run: bun run package
+        run: vp run package
 
       - name: Run tests
-        run: bun run test
+        run: vp test
 
       - name: Check plugin metadata
         if: ${{ hashFiles('scripts/sync-plugin-metadata.ts') != '' }}
-        run: bun run metadata:check
+        run: vp run metadata:verify
 
       - name: Pack npm artifact
         id: pack
@@ -57,7 +57,7 @@ jobs:
           echo "tarball=$tarball" >> "$GITHUB_OUTPUT"
 
       - name: Verify npm artifact contents
-        run: bun scripts/verify-package.ts "${{ steps.pack.outputs.tarball }}"
+        run: vp run artifact:verify "${{ steps.pack.outputs.tarball }}"
 
       - name: Smoke-install npm artifact
         shell: bash

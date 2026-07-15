@@ -147,6 +147,10 @@ export default defineConfig(async ({ command, mode }): Promise<ViteUserConfig> =
           dependsOn: ["metadata:verify", "build:package"],
           cache: false,
         },
+        "artifact:verify": {
+          command: "bun scripts/verify-package.ts",
+          cache: false,
+        },
         "build:web": {
           command: "vp build",
           cache: true,
