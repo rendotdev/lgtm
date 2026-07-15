@@ -60,10 +60,7 @@ export function CommandUi(props: {
               {TerminalIcons.success} {item.label}
             </Text>
             {item.detail ? (
-              <Text
-                color={item.mutedDetail ? TerminalColors.muted : TerminalColors.success}
-                dimColor={item.mutedDetail}
-              >
+              <Text color={item.mutedDetail ? TerminalColors.muted : TerminalColors.success}>
                 {`\n${item.detail}`}
               </Text>
             ) : null}
