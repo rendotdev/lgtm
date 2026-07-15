@@ -1314,7 +1314,7 @@ function DiffReviewList(props: {
   return (
     <div className="grid h-[calc(100dvh-var(--review-header-height,0px))] min-h-0 grid-cols-[auto_minmax(0,1fr)]">
       <aside
-        className="relative flex h-full shrink-0 flex-col border-r border-border bg-surface"
+        className="relative flex h-full min-h-0 shrink-0 flex-col border-r border-border bg-surface"
         style={{ width: sidebarWidth }}
       >
         <div
