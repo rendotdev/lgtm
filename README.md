@@ -1,14 +1,12 @@
-<h1 align="center">
-  <img src="https://raw.githubusercontent.com/rendotdev/lgtm/main/assets/logo-text.svg" alt="lgtm" width="420" />
-</h1>
+<p align="center">
+  <img src="https://raw.githubusercontent.com/rendotdev/lgtm/main/assets/logo-text.svg" alt="lgtm" width="320" />
+</p>
 
 <p align="center"><strong>Review agent work before you accept it.</strong></p>
 
 LGTM gives an agent's work a human checkpoint. It opens a local browser review of a Git diff or Markdown document, lets you leave comments on exact lines, and returns a decision the agent can act on: `approved`, `changes_requested`, or `canceled`.
 
-<p align="center">
-  <img src="https://raw.githubusercontent.com/rendotdev/lgtm/main/assets/lgtm-demo-diff.jpg" alt="lgtm reviewing and commenting on a TypeScript diff" width="1200" />
-</p>
+![lgtm reviewing and commenting on a TypeScript diff](https://raw.githubusercontent.com/rendotdev/lgtm/main/assets/lgtm-demo-diff.jpg)
 
 ## Install
 
@@ -53,9 +51,7 @@ Review source and comments remain available for browser refreshes for seven days
 
 ## Review other sources
 
-<p align="center">
-  <img src="https://raw.githubusercontent.com/rendotdev/lgtm/main/assets/lgtm-demo-document.jpg" alt="lgtm reviewing and commenting on a rendered Markdown implementation plan" width="1200" />
-</p>
+![lgtm reviewing and commenting on a rendered Markdown implementation plan](https://raw.githubusercontent.com/rendotdev/lgtm/main/assets/lgtm-demo-document.jpg)
 
 ```bash
 lgtm review worktree ../feature-worktree --name "Review feature worktree"
