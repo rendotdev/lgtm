@@ -10,7 +10,6 @@
         "react": "^19.2.7",
       },
       "devDependencies": {
-        "@earendil-works/pi-ai": "^0.80.6",
         "@earendil-works/pi-coding-agent": "^0.80.6",
         "@fontsource-variable/geist": "^5.2.9",
         "@fontsource-variable/geist-mono": "^5.2.8",
@@ -39,11 +38,10 @@
         "zod": "^4.4.3",
       },
       "peerDependencies": {
-        "@earendil-works/pi-ai": "*",
         "@earendil-works/pi-coding-agent": "*",
+        "typebox": "*",
       },
       "optionalPeers": [
-        "@earendil-works/pi-ai",
         "@earendil-works/pi-coding-agent",
       ],
     },
@@ -116,7 +114,7 @@
 
     "@babel/helper-validator-identifier": ["@babel/helper-validator-identifier@7.29.7", "", {}, ""],
 
-    "@babel/runtime": ["@babel/runtime@7.29.2", "", {}, "sha512-JiDShH45zKHWyGe4ZNVRrCjBz8Nh9TMmZG1kh4QTK8hCBTWBi8Da+i7s1fJw7/lYpM4ccepSNfqzZ/QvABBi5g=="],
+    "@babel/runtime": ["@babel/runtime@7.29.7", "", {}, ""],
 
     "@blazediff/core": ["@blazediff/core@1.9.1", "", {}, ""],
 
@@ -1102,13 +1100,9 @@
 
     "@pierre/diffs/diff": ["diff@9.0.0", "", {}, ""],
 
-    "@spectrum-icons/ui/@babel/runtime": ["@babel/runtime@7.29.7", "", {}, ""],
-
-    "@testing-library/dom/@babel/runtime": ["@babel/runtime@7.29.7", "", {}, ""],
-
     "@voidzero-dev/vite-plus-core/fsevents": ["fsevents@2.3.3", "", { "os": "darwin" }, ""],
 
-    "dom-helpers/@babel/runtime": ["@babel/runtime@7.29.7", "", {}, ""],
+    "json-schema-to-ts/@babel/runtime": ["@babel/runtime@7.29.2", "", {}, "sha512-JiDShH45zKHWyGe4ZNVRrCjBz8Nh9TMmZG1kh4QTK8hCBTWBi8Da+i7s1fJw7/lYpM4ccepSNfqzZ/QvABBi5g=="],
 
     "mdast-util-find-and-replace/escape-string-regexp": ["escape-string-regexp@5.0.0", "", {}, ""],
 
@@ -1123,8 +1117,6 @@
     "prop-types/react-is": ["react-is@16.13.1", "", {}, ""],
 
     "protobufjs/@types/node": ["@types/node@22.19.19", "", { "dependencies": { "undici-types": "~6.21.0" } }, "sha512-dyh/xO2Fh5bYrfWaaqGrRQQGkNdmYw6AmaAUvYeUMNTWQtvb796ikLdmTchRmOlOiIJ1TDXfWgVx1QkUlQ6Hew=="],
-
-    "react-transition-group/@babel/runtime": ["@babel/runtime@7.29.7", "", {}, ""],
 
     "vite/fsevents": ["fsevents@2.3.3", "", { "os": "darwin" }, ""],
 

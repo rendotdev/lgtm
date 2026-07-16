@@ -1,9 +1,5 @@
-import { Type } from "@earendil-works/pi-ai";
-import {
-  defineTool,
-  type ExtensionAPI,
-  type ExtensionContext,
-} from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { resolve } from "node:path";
 import { DomainClass } from "../../domain/domain-class.ts";
 import {
@@ -43,11 +39,11 @@ type LgtmPiExtensionDependencies = {
 export class LgtmPiExtensionClass extends DomainClass<{}, LgtmPiExtensionDependencies> {
   public register(params: { pi: ExtensionAPI }) {
     const pi = params.pi;
-    pi.registerTool(this.createOpenGitReviewTool(pi));
-    pi.registerTool(this.createOpenWorktreeReviewTool(pi));
-    pi.registerTool(this.createOpenJsonReviewTool(pi));
-    pi.registerTool(this.createOpenDocumentReviewTool(pi));
-    pi.registerTool(this.createFinishReviewTool());
+    this.registerOpenGitReviewTool(pi);
+    this.registerOpenWorktreeReviewTool(pi);
+    this.registerOpenJsonReviewTool(pi);
+    this.registerOpenDocumentReviewTool(pi);
+    this.registerFinishReviewTool(pi);
 
     pi.on("session_shutdown", async (_event, ctx) => {
       await this.deps.stopReviews(ctx.cwd);
@@ -114,8 +110,8 @@ export class LgtmPiExtensionClass extends DomainClass<{}, LgtmPiExtensionDepende
     };
   }
 
-  private createOpenGitReviewTool(pi: ExtensionAPI) {
-    return defineTool({
+  private registerOpenGitReviewTool(pi: ExtensionAPI) {
+    pi.registerTool({
       name: "lgtm-open-git-review",
       label: "Open Git Review",
       description:
@@ -170,8 +166,8 @@ export class LgtmPiExtensionClass extends DomainClass<{}, LgtmPiExtensionDepende
     });
   }
 
-  private createOpenWorktreeReviewTool(pi: ExtensionAPI) {
-    return defineTool({
+  private registerOpenWorktreeReviewTool(pi: ExtensionAPI) {
+    pi.registerTool({
       name: "lgtm-open-worktree-review",
       label: "Open Worktree Review",
       description: "Open an lgtm browser review for changes in a local or SSH-hosted Git worktree.",
@@ -218,8 +214,8 @@ export class LgtmPiExtensionClass extends DomainClass<{}, LgtmPiExtensionDepende
     });
   }
 
-  private createOpenJsonReviewTool(pi: ExtensionAPI) {
-    return defineTool({
+  private registerOpenJsonReviewTool(pi: ExtensionAPI) {
+    pi.registerTool({
       name: "lgtm-open-json-review",
       label: "Open JSON Review",
       description:
@@ -251,8 +247,8 @@ export class LgtmPiExtensionClass extends DomainClass<{}, LgtmPiExtensionDepende
     });
   }
 
-  private createOpenDocumentReviewTool(pi: ExtensionAPI) {
-    return defineTool({
+  private registerOpenDocumentReviewTool(pi: ExtensionAPI) {
+    pi.registerTool({
       name: "lgtm-open-document-review",
       label: "Open Document Review",
       description:
@@ -280,8 +276,8 @@ export class LgtmPiExtensionClass extends DomainClass<{}, LgtmPiExtensionDepende
     });
   }
 
-  private createFinishReviewTool() {
-    return defineTool({
+  private registerFinishReviewTool(pi: ExtensionAPI) {
+    pi.registerTool({
       name: "lgtm-finish-review",
       label: "Finish LGTM Review",
       description:

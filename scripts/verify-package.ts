@@ -86,6 +86,7 @@ try {
   const packageJson = JSON.parse(await readFile(join(packageRoot, "package.json"), "utf8")) as {
     bin?: Record<string, string>;
     name?: string;
+    peerDependencies?: Record<string, string>;
     pi?: { extensions?: string[]; skills?: string[] };
     scripts?: Record<string, string>;
     version?: string;
@@ -96,6 +97,18 @@ try {
   const builtCli = await readFile(join(packageRoot, "dist/cli.mjs"), "utf8");
   const packagedSkill = await readFile(join(packageRoot, "skills/lgtm/SKILL.md"), "utf8");
   const packagedPiExtension = await readFile(join(packageRoot, "extensions/index.js"), "utf8");
+
+  if (packageJson.peerDependencies?.typebox !== "*") {
+    throw new Error("Published Pi extension must declare typebox as a core peer dependency");
+  }
+  const isPackagedPiExtensionImportingHostPackages =
+    packagedPiExtension.includes('from "@earendil-works/pi-ai"') ||
+    packagedPiExtension.includes('from "@earendil-works/pi-coding-agent"');
+  if (isPackagedPiExtensionImportingHostPackages) {
+    throw new Error(
+      "Published Pi extension must not import unavailable Pi host packages at runtime",
+    );
+  }
 
   const isBuiltCliMissingRemoteReviewSupport =
     !builtCli.includes("--remote-cwd") || !builtCli.includes("SSHGitRepositoryReaderClass");
