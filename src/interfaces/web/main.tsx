@@ -43,6 +43,7 @@ import {
   Moon,
   Rows3,
   Sun,
+  TriangleAlert,
   WrapText,
   X,
 } from "lucide-react";
@@ -81,11 +82,16 @@ import type {
   ReviewSourceFile,
 } from "../../domain/review/review.ts";
 import { CommentDraft } from "./comment-draft.ts";
+import { DocumentCodeHighlighter } from "./document-code-highlighter.ts";
+import { DocumentMarkdownNavigation } from "./document-markdown-navigation.ts";
 import { FileSearch } from "./file-search.ts";
 import { PreferencesApi } from "./preferences-api.ts";
 import { ReviewApi, type ReviewAppState } from "./review-api.ts";
+import { ReviewClipboardCopyClass } from "./review-clipboard-copy.ts";
 import { ReviewCommentInteraction } from "./review-comment-interaction.ts";
+import { ReviewDiffPresentation } from "./review-diff-presentation.ts";
 import { ReviewFileNavigation } from "./review-file-navigation.ts";
+import { ReviewGroupPresentation } from "./review-group-presentation.ts";
 import { ReviewPresentation } from "./review-presentation.ts";
 import { ToastNotifications } from "./toast-notifications.ts";
 import { useReviewServerMonitor } from "./use-review-server-monitor.ts";
@@ -99,10 +105,95 @@ const snappyTransition = {
 };
 const reviewIconSize = 14;
 const reviewIconStrokeWidth = 1.5;
+const ReviewClipboardCopy = new ReviewClipboardCopyClass(
+  {},
+  { writeText: navigator.clipboard.writeText.bind(navigator.clipboard) },
+);
 
 type CommentAnnotationMetadata = {
   commentId: string;
 };
+
+function ReviewStatusIndicator(props: {
+  label: string;
+  tone: "busy" | "idle" | "success" | "warning";
+}) {
+  return (
+    <Tooltip delay={140} closeDelay={140}>
+      <Tooltip.Trigger className="contents">
+        <span
+          role="status"
+          aria-label={props.label}
+          className="relative flex h-4 w-4 shrink-0 cursor-help items-center justify-center outline-none"
+          data-review-status-indicator={props.tone}
+        >
+          <AnimatePresence initial={false} mode="wait">
+            {props.tone === "busy" ? (
+              <motion.span
+                key="busy"
+                className="absolute inset-0 flex items-center justify-center text-muted"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={snappyTransition}
+              >
+                <Spinner size="sm" color="current" aria-hidden="true" />
+              </motion.span>
+            ) : props.tone === "warning" ? (
+              <motion.span
+                key="warning"
+                className="absolute inset-0 flex items-center justify-center text-muted"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={snappyTransition}
+              >
+                <TriangleAlert
+                  size={reviewIconSize}
+                  strokeWidth={reviewIconStrokeWidth}
+                  absoluteStrokeWidth
+                  aria-hidden="true"
+                />
+              </motion.span>
+            ) : props.tone === "idle" ? (
+              <motion.span
+                key="idle"
+                className="absolute inset-0 flex items-center justify-center text-muted"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={snappyTransition}
+              >
+                <span className="h-1.5 w-1.5 rounded-full bg-current" aria-hidden="true" />
+              </motion.span>
+            ) : (
+              <motion.span
+                key="success"
+                className="absolute inset-0 flex items-center justify-center text-muted"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={snappyTransition}
+              >
+                <Check
+                  size={reviewIconSize}
+                  strokeWidth={reviewIconStrokeWidth}
+                  absoluteStrokeWidth
+                  aria-hidden="true"
+                />
+              </motion.span>
+            )}
+          </AnimatePresence>
+          <span className="sr-only">{props.label}</span>
+        </span>
+      </Tooltip.Trigger>
+      <Tooltip.Content placement="bottom" showArrow>
+        <Tooltip.Arrow />
+        {props.label}
+      </Tooltip.Content>
+    </Tooltip>
+  );
+}
 
 function App() {
   const { resolvedTheme, setTheme, theme } = useTheme("system");
@@ -111,10 +202,14 @@ function App() {
   const [activeCommentId, setActiveCommentId] = useState<string | null>(null);
   const [copiedReviewPath, setCopiedReviewPath] = useState(false);
   const [isFinishing, setIsFinishing] = useState(false);
+  const [copyingStatus, setCopyingStatus] = useState<string | null>(null);
   const [showBusyIndicator, setShowBusyIndicator] = useState(false);
   const [busyIndicatorLabel, setBusyIndicatorLabel] = useState("Saving review");
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
-  const [recoveryStatus, setRecoveryStatus] = useState<string | null>(null);
+  const [reviewStatusOverride, setReviewStatusOverride] = useState<{
+    label: string;
+    tone: "success" | "warning";
+  } | null>(null);
   const [collapsedFileIds, setCollapsedFileIds] = useState<Set<string>>(() => new Set());
   const reviewHeaderRef = useRef<HTMLElement | null>(null);
   const initializedReviewId = useRef<string | null>(null);
@@ -173,8 +268,7 @@ function App() {
   const fileExpansion = preferences.fileExpansion;
   const fileExpansionOverrides = preferences.fileExpansionOverrides;
   const preferencesReady = preferencesQuery.isFetched;
-  const diffThemeType = resolvedTheme === "dark" ? "dark" : "light";
-  const diffTheme = diffThemeType === "dark" ? "github-dark" : "github-light";
+  const diffTheme = ReviewDiffPresentation.resolveTheme({ resolvedTheme });
 
   useEffect(() => {
     if (!preferencesQuery.error) {
@@ -184,7 +278,8 @@ function App() {
   }, [preferencesQuery.error]);
 
   useEffect(() => {
-    if (!reviewStateQuery.data || !preferencesReady) {
+    const shouldWaitForReview = !reviewStateQuery.data || !preferencesReady;
+    if (shouldWaitForReview) {
       return;
     }
     const nextState = reviewStateQuery.data;
@@ -255,11 +350,13 @@ function App() {
         review: savedReview,
       });
       setLastSavedAt(new Date());
+      setReviewStatusOverride(null);
       return savedReview;
     },
     {
       wait: 400,
       onError: () => {
+        setReviewStatusOverride({ label: "Comments not saved", tone: "warning" });
         ToastNotifications.commentsNotSaved();
       },
     },
@@ -515,26 +612,35 @@ function App() {
     }
   }
 
+  async function copyReviewHandoff(params: { text: string; status: string }): Promise<boolean> {
+    return await ReviewClipboardCopy.copy({
+      text: params.text,
+      onStart: () => setCopyingStatus(params.status),
+      onFinish: () => setCopyingStatus(null),
+    });
+  }
+
   async function finishReview(decision: "approved" | "changes_requested") {
-    if (!state || isFinishing || isSaving) {
+    const isReviewBusy = !state || isFinishing || isSaving;
+    if (isReviewBusy) {
       return;
     }
-    if (
+    const isEmptyChangeRequest =
       decision === "changes_requested" &&
-      ReviewPresentation.commentCount({ review: state.review }) === 0
-    ) {
+      ReviewPresentation.commentCount({ review: state.review }) === 0;
+    if (isEmptyChangeRequest) {
       return;
     }
     setIsFinishing(true);
-    setRecoveryStatus(null);
-    try {
-      await navigator.clipboard.writeText(
-        ReviewHandoff.clipboardText({ decision, review: state.review }),
-      );
-      setCopiedReviewPath(true);
-    } catch {
+    setReviewStatusOverride(null);
+    const didCopyHandoff = await copyReviewHandoff({
+      text: ReviewHandoff.clipboardText({ decision, review: state.review }),
+      status: "Copying review handoff",
+    });
+    if (!didCopyHandoff) {
       setIsFinishing(false);
-      setCopiedReviewPath(false);
+      hideBusyIndicatorDebouncer.cancel();
+      setShowBusyIndicator(false);
       ToastNotifications.copyFailed();
       return;
     }
@@ -545,13 +651,22 @@ function App() {
         review: savedReview,
       });
     } catch {
+      const didCopyComments = await copyReviewHandoff({
+        text: ReviewHandoff.fallbackText({ review: state.review }),
+        status: "Copying comments",
+      });
       setIsFinishing(false);
-      setCopiedReviewPath(false);
-      try {
-        await navigator.clipboard.writeText(ReviewHandoff.fallbackText({ review: state.review }));
-        setRecoveryStatus("Comments copied");
-      } catch {
-        setRecoveryStatus("Comments kept in this tab");
+      hideBusyIndicatorDebouncer.cancel();
+      setShowBusyIndicator(false);
+      setReviewStatusOverride(
+        didCopyComments
+          ? { label: "Comments copied", tone: "success" }
+          : { label: "Comments kept in this tab", tone: "warning" },
+      );
+      if (didCopyComments) {
+        ToastNotifications.commentsCopied();
+      } else {
+        ToastNotifications.commentsKeptInTab();
       }
       return;
     }
@@ -564,13 +679,16 @@ function App() {
       }, 50);
     } catch {
       setIsFinishing(false);
-      setCopiedReviewPath(false);
-      setRecoveryStatus("Review saved but not finished");
+      hideBusyIndicatorDebouncer.cancel();
+      setShowBusyIndicator(false);
+      setReviewStatusOverride({ label: "Review saved but not finished", tone: "warning" });
+      ToastNotifications.reviewNotFinished();
     }
   }
 
   async function cancelReview() {
-    if (!state || isFinishing || isSaving) {
+    const isReviewBusy = !state || isFinishing || isSaving;
+    if (isReviewBusy) {
       return;
     }
     setIsFinishing(true);
@@ -619,21 +737,32 @@ function App() {
   const isFinished = review.status !== "open";
   const decision = primaryDecision;
   const decisionButtonLabel = commentCount > 0 ? `Send (${commentCount})` : "Approve";
+  const shouldShowBusyIndicator = copyingStatus !== null || showBusyIndicator;
+  const currentBusyIndicatorLabel = copyingStatus ?? busyIndicatorLabel;
   const primaryShortcutLabel = formatForDisplay("Mod+Enter");
   const savedTime = lastSavedAt
     ? lastSavedAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
     : null;
-  const reviewStatusLabel =
-    recoveryStatus ??
-    (review.status === "approved"
-      ? "Approved"
-      : review.status === "changes_requested"
-        ? "Comments sent"
-        : review.status === "canceled"
-          ? "Canceled"
-          : savedTime
-            ? "Saved " + savedTime
-            : null);
+  const idleReviewStatus =
+    reviewStatusOverride ??
+    (review.status === "open" && !savedTime
+      ? { label: "Not saved yet", tone: "idle" as const }
+      : {
+          label:
+            review.status === "approved"
+              ? "Approved"
+              : review.status === "changes_requested"
+                ? "Comments sent"
+                : review.status === "canceled"
+                  ? "Canceled"
+                  : savedTime
+                    ? "Saved " + savedTime
+                    : "Up to date",
+          tone: "success" as const,
+        });
+  const currentReviewStatus = shouldShowBusyIndicator
+    ? { label: currentBusyIndicatorLabel, tone: "busy" as const }
+    : idleReviewStatus;
   const contentMaxWidth = payload.kind === "document" ? "max-w-4xl" : "max-w-7xl";
   const canToggleFiles = payload.kind === "diff" && payload.files.length > 0;
   const hasExpandedFiles = canToggleFiles && collapsedFileIds.size < payload.files.length;
@@ -698,13 +827,19 @@ function App() {
           <div className="min-w-0 flex-1">
             <div className={"mx-auto px-4 py-4 " + contentMaxWidth}>
               <div className="flex min-w-0 items-center justify-between gap-4">
-                <Typography.Heading
-                  level={1}
-                  truncate
-                  className="min-w-0 text-lg font-semibold leading-6 text-foreground"
-                >
-                  {payload.name}
-                </Typography.Heading>
+                <div className="flex min-w-0 flex-1 items-center gap-2">
+                  <Typography.Heading
+                    level={1}
+                    truncate
+                    className="min-w-0 text-lg font-semibold leading-6 text-foreground"
+                  >
+                    {payload.name}
+                  </Typography.Heading>
+                  <ReviewStatusIndicator
+                    label={currentReviewStatus.label}
+                    tone={currentReviewStatus.tone}
+                  />
+                </div>
                 <InputGroup
                   variant="secondary"
                   aria-label="Review JSON path"
@@ -792,45 +927,6 @@ function App() {
                   ) : null}
                 </div>
                 <div className="flex min-w-0 shrink-0 flex-wrap items-center justify-end gap-2">
-                  <div className="flex min-w-0 items-center justify-end gap-2" aria-live="polite">
-                    <span className="relative h-4 w-4 shrink-0">
-                      <AnimatePresence initial={false}>
-                        {showBusyIndicator ? (
-                          <motion.span
-                            key="loading"
-                            className="absolute inset-0 flex items-center justify-center text-accent"
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            exit={{ opacity: 0 }}
-                            transition={snappyTransition}
-                          >
-                            <Spinner size="sm" color="current" aria-label={busyIndicatorLabel} />
-                          </motion.span>
-                        ) : reviewStatusLabel ? (
-                          <motion.span
-                            key="saved"
-                            className="absolute inset-0 flex items-center justify-center text-muted"
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            exit={{ opacity: 0 }}
-                            transition={snappyTransition}
-                          >
-                            <Check
-                              size={reviewIconSize}
-                              strokeWidth={reviewIconStrokeWidth}
-                              absoluteStrokeWidth
-                              aria-hidden="true"
-                            />
-                          </motion.span>
-                        ) : null}
-                      </AnimatePresence>
-                    </span>
-                    {reviewStatusLabel ? (
-                      <Typography type="body-xs" color="muted" className="shrink-0 leading-none">
-                        {reviewStatusLabel}
-                      </Typography>
-                    ) : null}
-                  </div>
                   <Tooltip delay={140} closeDelay={140} isDisabled={!canToggleFiles}>
                     <Tooltip.Trigger className="contents">
                       <Button
@@ -899,33 +995,36 @@ function App() {
       </header>
 
       {payload.kind === "document" && payload.document ? (
-        <main className="h-[calc(100dvh-var(--review-header-height,0px))] overflow-y-auto">
-          <div
-            className={
-              "mx-auto flex flex-col gap-4 px-4 pt-[var(--review-content-top)] pb-[50vh] " +
-              contentMaxWidth
-            }
-            data-review-content-frame=""
-          >
-            <DocumentReviewSurface
-              document={payload.document}
-              comments={review.documentComments}
-              activeCommentId={activeCommentId}
-              setActiveCommentId={setActiveCommentId}
-              addComment={addDocumentComment}
-              updateComment={updateDocumentComment}
-              deleteComment={deleteDocumentComment}
-            />
-          </div>
-        </main>
+        <div className="flex h-[calc(100dvh-var(--review-header-height,0px))] flex-col">
+          <main className="min-h-0 flex-1 overflow-y-auto">
+            <div
+              className={
+                "mx-auto flex flex-col gap-4 px-4 pt-[var(--review-content-top)] pb-[50vh] " +
+                contentMaxWidth
+              }
+              data-review-content-frame=""
+            >
+              <DocumentReviewSurface
+                document={payload.document}
+                comments={review.documentComments}
+                activeCommentId={activeCommentId}
+                setActiveCommentId={setActiveCommentId}
+                addComment={addDocumentComment}
+                updateComment={updateDocumentComment}
+                deleteComment={deleteDocumentComment}
+              />
+            </div>
+          </main>
+          <ReviewThemeFooter theme={theme} setTheme={setTheme} contentMaxWidth={contentMaxWidth} />
+        </div>
       ) : (
         <DiffReviewList
           payload={payload}
           review={review}
           diffStyle={diffStyle}
           lineWrap={lineWrap}
-          diffTheme={diffTheme}
-          diffThemeType={diffThemeType}
+          diffTheme={diffTheme.name}
+          diffThemeType={diffTheme.type}
           theme={theme}
           setTheme={setTheme}
           sidebarWidth={preferences.sidebarWidth}
@@ -994,6 +1093,33 @@ const ReviewFileRow = React.memo(function ReviewFileRow(
   );
 });
 
+function ReviewGroupHeader(props: {
+  added: number;
+  fileCount: number;
+  removed: number;
+  title: string;
+}) {
+  return (
+    <div
+      className="flex items-end justify-between gap-4 border-b border-border px-1 pb-3 pt-1"
+      data-review-group-header=""
+    >
+      <div className="min-w-0">
+        <Typography type="h5" weight="semibold" className="truncate">
+          {props.title}
+        </Typography>
+        <Typography type="body-xs" color="muted" className="mt-1 block">
+          {props.fileCount} {props.fileCount === 1 ? "file" : "files"}
+        </Typography>
+      </div>
+      <span className="flex shrink-0 gap-2 font-mono text-xs tabular-nums">
+        <span className="text-green-600 dark:text-green-400">+{props.added}</span>
+        <span className="text-red-600 dark:text-red-400">-{props.removed}</span>
+      </span>
+    </div>
+  );
+}
+
 function DiffReviewList(props: {
   payload: ReviewPayload;
   review: ReviewJson;
@@ -1030,23 +1156,88 @@ function DiffReviewList(props: {
     () => FileSearch.search({ files: props.payload.files, query: deferredFileQuery }),
     [deferredFileQuery, props.payload.files],
   );
+  const sidebarGroups = useMemo(
+    () => ReviewGroupPresentation.build({ files: sidebarFiles, groups: props.payload.groups }),
+    [props.payload.groups, sidebarFiles],
+  );
+  const sidebarItems = useMemo(
+    () =>
+      sidebarGroups.flatMap((group, groupIndex) => {
+        const fileItems = group.files.map((file) => ({ kind: "file" as const, file }));
+        return group.title
+          ? [
+              {
+                kind: "group" as const,
+                key: `group-${groupIndex}-${group.title}`,
+                title: group.title,
+                fileCount: group.files.length,
+              },
+              ...fileItems,
+            ]
+          : fileItems;
+      }),
+    [sidebarGroups],
+  );
+  const reviewGroups = useMemo(
+    () =>
+      ReviewGroupPresentation.build({
+        files: props.payload.files,
+        groups: props.payload.groups,
+      }),
+    [props.payload.files, props.payload.groups],
+  );
+  const reviewItems = useMemo(
+    () =>
+      reviewGroups.flatMap((group, groupIndex) => {
+        const fileItems = group.files.map((file) => ({ kind: "file" as const, file }));
+        if (!group.title) {
+          return fileItems;
+        }
+        const totals = group.files.reduce(
+          (sum, file) => ({ added: sum.added + file.added, removed: sum.removed + file.removed }),
+          { added: 0, removed: 0 },
+        );
+        return [
+          {
+            kind: "group" as const,
+            key: `group-${groupIndex}-${group.title}`,
+            title: group.title,
+            fileCount: group.files.length,
+            ...totals,
+          },
+          ...fileItems,
+        ];
+      }),
+    [reviewGroups],
+  );
   useEffect(
     function prepareFileSearchIndex() {
       FileSearch.prepare({ files: props.payload.files });
     },
     [props.payload.files],
   );
-  const getFileItemKey = useCallback(
-    (index: number) => props.payload.files[index]?.id ?? index,
-    [props.payload.files],
+  const getReviewItemKey = useCallback(
+    (index: number) => {
+      const item = reviewItems[index];
+      return item?.kind === "file" ? item.file.id : (item?.key ?? index);
+    },
+    [reviewItems],
   );
   const getSidebarItemKey = useCallback(
-    (index: number) => sidebarFiles[index]?.id ?? index,
-    [sidebarFiles],
+    (index: number) => {
+      const item = sidebarItems[index];
+      return item?.kind === "file" ? item.file.id : (item?.key ?? index);
+    },
+    [sidebarItems],
   );
   const fileIndexById = useMemo(
-    () => new Map(props.payload.files.map((file, index) => [file.id, index])),
-    [props.payload.files],
+    () =>
+      new Map(
+        reviewItems.flatMap((item, index) =>
+          item.kind === "file" ? ([[item.file.id, index]] as const) : [],
+        ),
+      ),
+    [reviewItems],
   );
   const fileById = useMemo(
     () => new Map(props.payload.files.map((file) => [file.id, file])),
@@ -1057,8 +1248,8 @@ function DiffReviewList(props: {
     [props.review.files],
   );
   const sidebarVirtualizer = useVirtualizer({
-    count: sidebarFiles.length,
-    estimateSize: () => 38,
+    count: sidebarItems.length,
+    estimateSize: (index) => (sidebarItems[index]?.kind === "group" ? 34 : 38),
     getScrollElement: () => sidebarScrollElementRef.current,
     getItemKey: getSidebarItemKey,
     overscan: 10,
@@ -1066,33 +1257,38 @@ function DiffReviewList(props: {
   });
   const estimateSize = useCallback(
     (index: number) => {
-      const file = props.payload.files[index];
-      if (!file) {
+      const item = reviewItems[index];
+      if (!item) {
         return 120;
       }
+      if (item.kind === "group") {
+        return 72;
+      }
+      const file = item.file;
       if (props.collapsedFileIds.has(file.id)) {
         return 82;
       }
       return Math.max(120, 112 + (file.added + file.removed) * 22);
     },
-    [props.collapsedFileIds, props.payload.files],
+    [props.collapsedFileIds, reviewItems],
   );
-  const fileVirtualizer = useVirtualizer({
-    count: props.payload.files.length,
+  const reviewVirtualizer = useVirtualizer({
+    count: reviewItems.length,
     estimateSize,
     getScrollElement: () => scrollElementRef.current,
-    getItemKey: getFileItemKey,
+    getItemKey: getReviewItemKey,
     overscan: 1,
     scrollMargin,
     useFlushSync: false,
   });
-  fileVirtualizer.shouldAdjustScrollPositionOnItemSizeChange = () => restoringFileRef.current;
+  reviewVirtualizer.shouldAdjustScrollPositionOnItemSizeChange = () => restoringFileRef.current;
 
   const scrollToFile = useCallback(
     function scrollToFile(params: { fileId: string; updateUrl: boolean }) {
       const fileIndex = fileIndexById.get(params.fileId);
       const file = fileById.get(params.fileId);
-      if (fileIndex === undefined || !file) {
+      const isFileMissing = fileIndex === undefined || !file;
+      if (isFileMissing) {
         return;
       }
       if (params.updateUrl) {
@@ -1109,9 +1305,9 @@ function DiffReviewList(props: {
           );
         }
       }
-      fileVirtualizer.scrollToIndex(fileIndex, { align: "start", behavior: "auto" });
+      reviewVirtualizer.scrollToIndex(fileIndex, { align: "start", behavior: "auto" });
     },
-    [fileById, fileIndexById, fileVirtualizer],
+    [fileById, fileIndexById, reviewVirtualizer],
   );
 
   const handleFileExpandedChange = useCallback(
@@ -1123,7 +1319,7 @@ function DiffReviewList(props: {
             `[data-review-file-item="${CSS.escape(fileId)}"]`,
           );
           if (item) {
-            fileVirtualizer.measureElement(item);
+            reviewVirtualizer.measureElement(item);
           }
         });
       }
@@ -1134,14 +1330,14 @@ function DiffReviewList(props: {
         );
         const heading = item?.querySelector<HTMLElement>("[data-review-file-heading]");
         const scrollElement = scrollElementRef.current;
-        if (
+        const isHeadingPinned =
           item &&
           heading &&
           scrollElement &&
           Math.abs(
             heading.getBoundingClientRect().top - scrollElement.getBoundingClientRect().top,
-          ) <= 1
-        ) {
+          ) <= 1;
+        if (isHeadingPinned) {
           const headingInset = Number.parseFloat(
             getComputedStyle(heading.parentElement ?? heading).borderTopWidth,
           );
@@ -1160,13 +1356,14 @@ function DiffReviewList(props: {
 
       commitExpandedChange();
     },
-    [fileVirtualizer, props.setFileExpanded],
+    [props.setFileExpanded, reviewVirtualizer],
   );
 
   useLayoutEffect(() => {
     const list = listRef.current;
     const scrollElement = scrollElementRef.current;
-    if (!list || !scrollElement) {
+    const isReviewListMissing = !list || !scrollElement;
+    if (isReviewListMissing) {
       return;
     }
     setScrollMargin(
@@ -1227,7 +1424,8 @@ function DiffReviewList(props: {
       const item = listRef.current?.querySelector<HTMLElement>(
         `[data-review-file-item="${CSS.escape(fileId)}"]`,
       );
-      if (item && scrollElement) {
+      const canRestoreFile = item && scrollElement;
+      if (canRestoreFile) {
         const offset = item.getBoundingClientRect().top - scrollElement.getBoundingClientRect().top;
         if (Math.abs(offset) <= 1) {
           settleTimer ??= window.setTimeout(stopRestoring, 250);
@@ -1303,7 +1501,8 @@ function DiffReviewList(props: {
   }
 
   function resizeSidebarWithKeyboard(event: React.KeyboardEvent<HTMLDivElement>) {
-    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") {
+    const isResizeKey = event.key === "ArrowLeft" || event.key === "ArrowRight";
+    if (!isResizeKey) {
       return;
     }
     event.preventDefault();
@@ -1365,10 +1564,34 @@ function DiffReviewList(props: {
             ) : null}
             <div className="relative" style={{ height: sidebarVirtualizer.getTotalSize() }}>
               {sidebarVirtualizer.getVirtualItems().map((virtualFile) => {
-                const file = sidebarFiles[virtualFile.index];
-                if (!file) {
+                const item = sidebarItems[virtualFile.index];
+                if (!item) {
                   return null;
                 }
+                if (item.kind === "group") {
+                  return (
+                    <div
+                      key={virtualFile.key}
+                      ref={sidebarVirtualizer.measureElement}
+                      data-index={virtualFile.index}
+                      className="absolute left-0 top-0 flex w-full items-center justify-between gap-2 px-2 pb-1 pt-3"
+                      style={{ transform: `translateY(${virtualFile.start}px)` }}
+                      data-review-sidebar-group=""
+                    >
+                      <Typography
+                        type="body-xs"
+                        weight="semibold"
+                        className="min-w-0 truncate uppercase tracking-[0.08em]"
+                      >
+                        {item.title}
+                      </Typography>
+                      <Typography type="body-xs" color="muted" className="shrink-0 tabular-nums">
+                        {item.fileCount}
+                      </Typography>
+                    </div>
+                  );
+                }
+                const file = item.file;
                 const isCollapsed = props.collapsedFileIds.has(file.id);
                 const isAdded = file.oldContent.length === 0 && file.newContent.length > 0;
                 const isDeleted = file.newContent.length === 0 && file.oldContent.length > 0;
@@ -1433,7 +1656,7 @@ function DiffReviewList(props: {
             </div>
           </nav>
         </ScrollShadow>
-        <SidebarThemeFooter theme={props.theme} setTheme={props.setTheme} />
+        <ReviewThemeFooter theme={props.theme} setTheme={props.setTheme} />
         <div
           role="separator"
           tabIndex={0}
@@ -1466,16 +1689,37 @@ function DiffReviewList(props: {
             ref={listRef}
             data-review-file-list=""
             style={{
-              height: fileVirtualizer.getTotalSize(),
+              height: reviewVirtualizer.getTotalSize(),
               overflowAnchor: "none",
               position: "relative",
             }}
           >
-            {fileVirtualizer.getVirtualItems().map((virtualFile) => {
-              const file = props.payload.files[virtualFile.index];
-              if (!file) {
+            {reviewVirtualizer.getVirtualItems().map((virtualFile) => {
+              const item = reviewItems[virtualFile.index];
+              if (!item) {
                 return null;
               }
+              if (item.kind === "group") {
+                return (
+                  <div
+                    key={virtualFile.key}
+                    ref={reviewVirtualizer.measureElement}
+                    data-index={virtualFile.index}
+                    className="absolute left-0 top-0 w-full pb-4"
+                    style={{
+                      top: virtualFile.start - reviewVirtualizer.options.scrollMargin,
+                    }}
+                  >
+                    <ReviewGroupHeader
+                      added={item.added}
+                      fileCount={item.fileCount}
+                      removed={item.removed}
+                      title={item.title}
+                    />
+                  </div>
+                );
+              }
+              const file = item.file;
               const reviewFile = reviewFileByLocation.get(file.location) || {
                 location: file.location,
                 added: file.added,
@@ -1490,12 +1734,12 @@ function DiffReviewList(props: {
               return (
                 <div
                   key={virtualFile.key}
-                  ref={fileVirtualizer.measureElement}
+                  ref={reviewVirtualizer.measureElement}
                   data-index={virtualFile.index}
                   data-review-file-item={file.id}
                   className="absolute left-0 top-0 w-full pb-4"
                   style={{
-                    top: virtualFile.start - fileVirtualizer.options.scrollMargin,
+                    top: virtualFile.start - reviewVirtualizer.options.scrollMargin,
                   }}
                 >
                   <ReviewFileRow
@@ -1523,38 +1767,47 @@ function DiffReviewList(props: {
   );
 }
 
-function SidebarThemeFooter(props: { theme: string; setTheme: (theme: string) => void }) {
+function ReviewThemeFooter(props: {
+  theme: string;
+  setTheme: (theme: string) => void;
+  contentMaxWidth?: string;
+}) {
+  const frameClassName = props.contentMaxWidth
+    ? `mx-auto flex w-full justify-end px-4 py-3 ${props.contentMaxWidth}`
+    : "flex w-full justify-end px-3 py-3";
   return (
-    <footer className="flex shrink-0 justify-end border-t border-border px-3 py-3">
-      <ButtonGroup size="sm" aria-label="Color theme">
-        <Button
-          variant={props.theme === "light" ? "secondary" : "outline"}
-          isIconOnly
-          aria-label="Use light theme"
-          aria-pressed={props.theme === "light"}
-          onPress={() => props.setTheme("light")}
-        >
-          <Sun size={reviewIconSize} strokeWidth={reviewIconStrokeWidth} aria-hidden="true" />
-        </Button>
-        <Button
-          variant={props.theme === "dark" ? "secondary" : "outline"}
-          isIconOnly
-          aria-label="Use dark theme"
-          aria-pressed={props.theme === "dark"}
-          onPress={() => props.setTheme("dark")}
-        >
-          <Moon size={reviewIconSize} strokeWidth={reviewIconStrokeWidth} aria-hidden="true" />
-        </Button>
-        <Button
-          variant={props.theme === "system" ? "secondary" : "outline"}
-          isIconOnly
-          aria-label="Use system theme"
-          aria-pressed={props.theme === "system"}
-          onPress={() => props.setTheme("system")}
-        >
-          <Monitor size={reviewIconSize} strokeWidth={reviewIconStrokeWidth} aria-hidden="true" />
-        </Button>
-      </ButtonGroup>
+    <footer className="shrink-0 border-t border-border">
+      <div className={frameClassName} data-review-theme-footer-frame="">
+        <ButtonGroup size="sm" aria-label="Color theme">
+          <Button
+            variant={props.theme === "light" ? "secondary" : "outline"}
+            isIconOnly
+            aria-label="Use light theme"
+            aria-pressed={props.theme === "light"}
+            onPress={() => props.setTheme("light")}
+          >
+            <Sun size={reviewIconSize} strokeWidth={reviewIconStrokeWidth} aria-hidden="true" />
+          </Button>
+          <Button
+            variant={props.theme === "dark" ? "secondary" : "outline"}
+            isIconOnly
+            aria-label="Use dark theme"
+            aria-pressed={props.theme === "dark"}
+            onPress={() => props.setTheme("dark")}
+          >
+            <Moon size={reviewIconSize} strokeWidth={reviewIconStrokeWidth} aria-hidden="true" />
+          </Button>
+          <Button
+            variant={props.theme === "system" ? "secondary" : "outline"}
+            isIconOnly
+            aria-label="Use system theme"
+            aria-pressed={props.theme === "system"}
+            onPress={() => props.setTheme("system")}
+          >
+            <Monitor size={reviewIconSize} strokeWidth={reviewIconStrokeWidth} aria-hidden="true" />
+          </Button>
+        </ButtonGroup>
+      </div>
     </footer>
   );
 }
@@ -1689,7 +1942,11 @@ function DocumentReviewSurface(props: {
         renderBlock("p", node, <p {...elementProps}>{children}</p>),
       li: ({ node, children, ...elementProps }) => renderBlock("li", node, children, elementProps),
       pre: ({ node, children, ...elementProps }) =>
-        renderBlock("pre", node, <pre {...elementProps}>{children}</pre>),
+        renderBlock(
+          "pre",
+          node,
+          <DocumentCodeBlock elementProps={elementProps}>{children}</DocumentCodeBlock>,
+        ),
       blockquote: ({ node, children, ...elementProps }) =>
         renderBlock("blockquote", node, <blockquote {...elementProps}>{children}</blockquote>),
       table: ({ node, children, ...elementProps }) =>
@@ -1701,11 +1958,16 @@ function DocumentReviewSurface(props: {
           </div>,
         ),
       hr: ({ node, ...elementProps }) => renderBlock("hr", node, <hr {...elementProps} />),
-      a: ({ node: _node, children, ...elementProps }) => (
-        <a {...elementProps} target="_blank" rel="noreferrer">
-          {children}
-        </a>
-      ),
+      a: ({ node: _node, children, ...elementProps }) => {
+        const linkAttributes = DocumentMarkdownNavigation.linkAttributes({
+          href: elementProps.href,
+        });
+        return (
+          <a {...elementProps} {...linkAttributes}>
+            {children}
+          </a>
+        );
+      },
     }),
     [],
   );
@@ -1724,7 +1986,9 @@ function DocumentReviewSurface(props: {
       const selectedText = textSelection.selectedText.trim();
       const startBlock = startElement?.closest<HTMLElement>("[data-document-block]");
       const endBlock = endElement?.closest<HTMLElement>("[data-document-block]");
-      if (!startBlock || !endBlock || !root.contains(startBlock) || !root.contains(endBlock)) {
+      const isSelectionOutsideDocument =
+        !startBlock || !endBlock || !root.contains(startBlock) || !root.contains(endBlock);
+      if (isSelectionOutsideDocument) {
         return;
       }
 
@@ -1762,7 +2026,11 @@ function DocumentReviewSurface(props: {
         onMouseUp={handleMouseUp}
         className="typeset typeset-docs max-w-none selection:bg-[#0070f3] selection:text-white"
       >
-        <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          rehypePlugins={[DocumentMarkdownNavigation.buildHeadingIdPlugin({})]}
+          components={components}
+        >
           {props.document.markdown}
         </ReactMarkdown>
       </article>
@@ -1770,20 +2038,52 @@ function DocumentReviewSurface(props: {
   );
 }
 
-const reviewDiffUnsafeCSS = [
-  ':host { --review-radius: 6px; --diffs-font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; --diffs-header-font-family: "Geist", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; --diffs-bg-hover-override: #0070f3; --diffs-bg-selection-override: #0070f3; --diffs-bg-selection-number-override: #0070f3; --diffs-selection-number-fg: #0070f3; }',
-  '[data-diffs-header="default"] { padding-inline: 0 !important; border-radius: var(--review-radius) var(--review-radius) 0 0 !important; }',
-  '[data-diffs-header="default"] [data-header-content] { margin-left: 0 !important; }',
-  '[data-diffs-header="default"] [data-metadata] { padding-right: 0 !important; }',
-  // Pierre adds vertical inset around the rows when its file header is disabled.
-  "[data-code] { padding-block: 0 !important; }",
-  // Pierre's scroll mode otherwise reserves a scrollbar gutter even when every line fits.
-  "[data-code] { overflow-x: auto !important; }",
-  "[data-change-icon] { opacity: 0.72; transform: scale(0.9); transform-origin: center; }",
-  "[data-diff-span] { border-radius: var(--review-radius) !important; }",
-  "[data-separator-content], [data-expand-button], [data-separator-wrapper] { border-color: var(--border) !important; border-radius: var(--review-radius) !important; }",
-  "[data-separator-wrapper] { background-color: var(--border) !important; }",
-].join("\n");
+function DocumentCodeBlock(props: {
+  children: React.ReactNode;
+  elementProps: React.HTMLAttributes<HTMLPreElement>;
+}) {
+  const codeElement = React.Children.toArray(props.children).find(React.isValidElement);
+  const codeElementProps = codeElement?.props as
+    | { children?: React.ReactNode; className?: string }
+    | undefined;
+  const className = codeElementProps?.className;
+  const code =
+    typeof codeElementProps?.children === "string"
+      ? codeElementProps.children.replace(/\n$/, "")
+      : "";
+  const language = DocumentCodeHighlighter.languageFromClassName({ className });
+  const [html, setHtml] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isCurrent = true;
+    setHtml(null);
+    void DocumentCodeHighlighter.highlight({ code, className }).then((highlighted) => {
+      if (isCurrent) {
+        setHtml(highlighted);
+      }
+    });
+    return () => {
+      isCurrent = false;
+    };
+  }, [className, code]);
+
+  return (
+    <Card
+      className="document-code overflow-clip rounded-[var(--vercel-radius)] !p-0"
+      data-document-code-language={language}
+    >
+      <Card.Content className="!p-0">
+        {html ? (
+          <div dangerouslySetInnerHTML={{ __html: html }} />
+        ) : (
+          <pre {...props.elementProps}>
+            <code className={className}>{code}</code>
+          </pre>
+        )}
+      </Card.Content>
+    </Card>
+  );
+}
 
 const ReviewFileDiff = React.memo(function ReviewFileDiff(props: ReviewFileDiffProps) {
   const { file, reviewFile } = props;
@@ -1822,17 +2122,20 @@ const ReviewFileDiff = React.memo(function ReviewFileDiff(props: ReviewFileDiffP
     parsedFileDiffCache.set(file, parsed);
     return parsed;
   }, [file, newFile, oldFile]);
-  const diffOptions = useMemo<NonNullable<FileDiffProps<CommentAnnotationMetadata>["options"]>>(
-    () => ({
+  const diffOptions = useMemo<
+    NonNullable<FileDiffProps<CommentAnnotationMetadata>["options"]>
+  >(() => {
+    const presentationOptions = ReviewDiffPresentation.fileOptions();
+    return {
+      ...presentationOptions,
       theme: props.diffTheme,
       themeType: props.diffThemeType,
       diffStyle: props.diffStyle,
       overflow: props.lineWrap ? "wrap" : "scroll",
-      diffIndicators: "classic",
-      hunkSeparators: "metadata",
-      disableFileHeader: true,
-      lineDiffType: file.added + file.removed > largeDiffWordHighlightThreshold ? "none" : "word",
-      unsafeCSS: reviewDiffUnsafeCSS,
+      lineDiffType:
+        file.added + file.removed > largeDiffWordHighlightThreshold
+          ? "none"
+          : presentationOptions.lineDiffType,
       enableLineSelection: true,
       onLineSelectionEnd: (range) => {
         if (range) {
@@ -1853,16 +2156,15 @@ const ReviewFileDiff = React.memo(function ReviewFileDiff(props: ReviewFileDiffP
           },
         });
       },
-    }),
-    [
-      clearSelectedLines,
-      file,
-      props.diffStyle,
-      props.diffTheme,
-      props.diffThemeType,
-      props.lineWrap,
-    ],
-  );
+    };
+  }, [
+    clearSelectedLines,
+    file,
+    props.diffStyle,
+    props.diffTheme,
+    props.diffThemeType,
+    props.lineWrap,
+  ]);
 
   const commentsById = useMemo(
     () => new Map(reviewFile.comments.map((comment) => [comment.id, comment])),
@@ -2042,17 +2344,27 @@ function CommentEditor(props: {
   });
 
   function finishComment(value: string) {
-    CommentDraft.finish(value, { onDelete: props.onDelete, onFinish: props.onFinish });
+    CommentDraft.finish({ value, onDelete: props.onDelete, onFinish: props.onFinish });
     props.setActiveCommentId(null);
   }
 
+  useHotkey("Escape", handleClearComment, {
+    enabled: props.active,
+    ignoreInputs: false,
+    target: textareaRef,
+  });
+
   useEffect(() => {
-    if (!props.active || !textareaRef.current) {
+    if (!props.active) {
       return;
     }
-    textareaRef.current.focus();
-    textareaRef.current.selectionStart = textareaRef.current.value.length;
-    textareaRef.current.selectionEnd = textareaRef.current.value.length;
+    const textarea = textareaRef.current;
+    if (!textarea) {
+      return;
+    }
+    textarea.focus();
+    textarea.selectionStart = textarea.value.length;
+    textarea.selectionEnd = textarea.value.length;
   }, [props.active, props.id]);
 
   useEffect(() => {
@@ -2062,7 +2374,8 @@ function CommentEditor(props: {
   }, [props.id]);
 
   function handleKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (event.key === "Enter" && !event.shiftKey) {
+    const shouldFinishComment = event.key === "Enter" && !event.shiftKey;
+    if (shouldFinishComment) {
       event.preventDefault();
       event.currentTarget.blur();
     }
@@ -2135,10 +2448,7 @@ createRoot(document.getElementById("root")!).render(
           poolSize: Math.min(4, navigator.hardwareConcurrency || 2),
           workerFactory: () => new DiffsWorker(),
         }}
-        highlighterOptions={{
-          lineDiffType: "word",
-          theme: { light: "github-light", dark: "github-dark" },
-        }}
+        highlighterOptions={ReviewDiffPresentation.highlighterOptions()}
       >
         <App />
       </WorkerPoolContextProvider>
