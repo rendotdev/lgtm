@@ -27,7 +27,7 @@ export class ReviewHandoffClass extends DomainClass<{}, {}> {
     const prefix =
       params.decision === "approved"
         ? "LGTM, approving the following changes"
-        : "PTAL, requesting the following changes";
+        : "PTAL, please address the review comments";
     return `${prefix}: ${params.review.reviewPath}`;
   }
 

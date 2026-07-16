@@ -1,8 +1,14 @@
-# lgtm
+<h1 align="center">
+  <img src="https://raw.githubusercontent.com/rendotdev/lgtm/main/assets/logo-text.svg" alt="lgtm" width="420" />
+</h1>
 
-> Review agent work before you accept it.
+<p align="center"><strong>Review agent work before you accept it.</strong></p>
 
 LGTM gives an agent's work a human checkpoint. It opens a local browser review of a Git diff or Markdown document, lets you leave comments on exact lines, and returns a decision the agent can act on: `approved`, `changes_requested`, or `canceled`.
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/rendotdev/lgtm/main/assets/lgtm-demo-diff.jpg" alt="lgtm reviewing and commenting on a TypeScript diff" width="1200" />
+</p>
 
 ## Install
 
@@ -46,6 +52,10 @@ LGTM opens the review in your browser. Read the diff, add line comments where ne
 Review source and comments remain available for browser refreshes for seven days. Reviews expire seven days after creation, even if they are still open; LGTM removes their files and stops their servers automatically.
 
 ## Review other sources
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/rendotdev/lgtm/main/assets/lgtm-demo-document.jpg" alt="lgtm reviewing and commenting on a rendered Markdown implementation plan" width="1200" />
+</p>
 
 ```bash
 lgtm review worktree ../feature-worktree --name "Review feature worktree"
@@ -120,8 +130,11 @@ vp dev
 vp check
 vp run package
 vp test
+bun run demo:images
 bun run lgtm --help
 ```
+
+`bun run demo:images` regenerates the light and dark mocked diff and document JPEGs used in this README.
 
 `vp dev` starts the browser app with hot reload and uses the current workspace for its temporary review API. Set `LGTM_DEV_CWD=/path/to/repo` to review another workspace.
 

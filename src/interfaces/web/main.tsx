@@ -686,7 +686,7 @@ function App() {
   }
 
   return (
-    <div className="h-dvh overflow-hidden bg-background text-foreground">
+    <div className="h-dvh overflow-hidden bg-background text-foreground" data-review-ready="">
       <header
         ref={reviewHeaderRef}
         className="sticky top-0 z-10 border-b border-border bg-background/95 backdrop-blur"

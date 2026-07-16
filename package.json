@@ -13,6 +13,7 @@
   "bugs": {
     "url": "https://github.com/rendotdev/lgtm/issues"
   },
+  "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/rendotdev/lgtm.git"
@@ -38,6 +39,7 @@
   "scripts": {
     "build": "vp build",
     "check": "vp check",
+    "demo:images": "vp run demo:assets",
     "lgtm": "vp run lgtm:cli",
     "metadata:check": "vp run metadata:verify",
     "metadata:sync": "vp run metadata:write",
@@ -74,6 +76,7 @@
     "ink-testing-library": "^4.0.0",
     "lucide-react": "^1.23.0",
     "motion": "^12.42.2",
+    "playwright": "^1.61.1",
     "react-dom": "^19.0.0",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",

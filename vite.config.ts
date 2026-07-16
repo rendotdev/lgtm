@@ -171,6 +171,17 @@ export default defineConfig(async ({ command, mode }): Promise<ViteUserConfig> =
           dependsOn: ["build:web", "build:cli", "build:pi"],
           cache: false,
         },
+        "demo:assets": {
+          command: "bun scripts/render-demo-images.ts",
+          dependsOn: ["build:package"],
+          cache: true,
+          output: [
+            "assets/lgtm-demo-diff.jpg",
+            "assets/lgtm-demo-diff-dark.jpg",
+            "assets/lgtm-demo-document.jpg",
+            "assets/lgtm-demo-document-dark.jpg",
+          ],
+        },
         "lgtm:cli": {
           command: "node dist/cli.mjs",
           dependsOn: ["validate", "build:package"],

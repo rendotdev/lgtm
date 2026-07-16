@@ -199,6 +199,7 @@ const ReviewGarbageCollector = new ReviewGarbageCollectorClass(
 export type OpenReviewOptions = {
   cwd: string;
   sessionId?: string;
+  reviewUUID?: string;
   signal?: AbortSignal;
   cleanupOnExit?: boolean;
   detachedServer?: boolean;
@@ -217,7 +218,9 @@ export async function openReview(
   const sessionId = ReviewIdentifier.sanitizePathSegment({
     value: options.sessionId ?? `cli-${process.pid}`,
   });
-  const reviewUUID = randomUUID();
+  const reviewUUID = ReviewIdentifier.sanitizePathSegment({
+    value: options.reviewUUID ?? randomUUID(),
+  });
   const reviewId = `${sessionId}-${reviewUUID}`;
   const appDir = resolve(cwd, ".lgtm", reviewId);
   const reviewPath = join(appDir, "review.json");

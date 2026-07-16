@@ -33,7 +33,8 @@ describe("ReviewHandoffClass", () => {
           documentComments: [],
         },
       }),
-    ).toBe(`PTAL, requesting the following changes: /Users/example/project/.lgtm/session/review.json
+    )
+      .toBe(`PTAL, please address the review comments: /Users/example/project/.lgtm/session/review.json
 
 # Authentication review
 
@@ -97,7 +98,7 @@ Selected text:
       "LGTM, approving the following changes: /Users/example/project/.lgtm/session/review.json",
     );
     expect(Handoff.clipboardText({ decision: "changes_requested", review })).toBe(
-      "PTAL, requesting the following changes: /Users/example/project/.lgtm/session/review.json",
+      "PTAL, please address the review comments: /Users/example/project/.lgtm/session/review.json",
     );
   });
 });

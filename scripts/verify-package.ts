@@ -18,7 +18,6 @@ const allowedRoots = new Set([
   ".mcp.json",
   "LICENSE",
   "README.md",
-  "assets",
   "bin",
   "dist",
   "extensions",
