@@ -58,6 +58,12 @@ describe("LgtmPiExtensionClass", () => {
       expect(tool.promptSnippet).toContain(tool.name);
       expect(tool.promptGuidelines?.every((guideline) => guideline.includes(tool.name))).toBe(true);
     }
+    const openTools = tools.filter((tool) => tool.name.startsWith("lgtm-open-"));
+    for (const tool of openTools) {
+      expect(tool.promptGuidelines?.join("\n")).toContain(
+        "instead of invoking the lgtm CLI through bash",
+      );
+    }
 
     const gitReviewTool = tools.find((tool) => tool.name === "lgtm-open-git-review");
     expect(gitReviewTool).toBeDefined();

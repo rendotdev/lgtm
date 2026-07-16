@@ -17,6 +17,19 @@ lgtm setup
 
 `lgtm setup` installs the LGTM plugin and skill for Pi, Claude Code, and Codex. To configure one integration only, pass `--target pi`, `--target claude`, or `--target codex`.
 
+## Agent integration lifecycle
+
+LGTM uses the agent's integrated tools whenever they are available. The CLI remains available as a manual fallback.
+
+| Agent        | Integrated tools            | Decision handoff                                                                                        |
+| ------------ | --------------------------- | ------------------------------------------------------------------------------------------------------- |
+| Pi           | `lgtm-open-*-review`        | The tool returns the review URL, then the decision starts a new Pi turn through an automatic follow-up. |
+| Claude Code  | `open_*_review` through MCP | The tool call stays pending until the decision, then Claude continues with the result.                  |
+| Codex        | `open_*_review` through MCP | The tool call stays pending until the decision, then Codex continues with the result.                   |
+| CLI fallback | `lgtm review ...`           | The decision is saved locally. Return to the agent conversation afterward so it can recover the result. |
+
+Reserve the CLI fallback for sessions where neither the native Pi tools nor the MCP tools are available. Claude Code may ask you to approve the plugin's MCP server the first time it loads; approve it and start a new session before opening a review.
+
 ## Review Git changes
 
 Open the current working tree:

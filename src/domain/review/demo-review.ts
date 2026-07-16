@@ -65,6 +65,26 @@ export class DemoReviewFactoryClass extends DomainClass<{}, {}> {
     return {
       kind: "diff",
       name: "Demo: Add resilient task retries",
+      groups: [
+        {
+          title: "Implementation",
+          files: ["src/task-runner.ts", "src/retry-policy.ts", "src/retry-schedule.ts"],
+        },
+        {
+          title: "Validation",
+          files: [
+            "src/task-runner.test.ts",
+            "src/retry-policy.test.ts",
+            "src/retry-schedule.test.ts",
+          ],
+        },
+        {
+          title: "Observability",
+          files: ["src/task-attempt-log.ts", "src/task-attempt-log.test.ts"],
+        },
+        { title: "Configuration", files: ["src/task-runner-config.ts"] },
+        { title: "Documentation", files: ["README.md", "docs/task-retries.md"] },
+      ],
       files: [
         {
           location: "src/task-runner.ts",
@@ -89,7 +109,31 @@ export class DemoReviewFactoryClass extends DomainClass<{}, {}> {
     }
   }
 
-  throw new Error("Task retry loop finished unexpectedly.");
+          throw new Error("Task retry loop finished unexpectedly.");
+}
+`,
+        },
+        {
+          location: "src/retry-policy.ts",
+          oldContent: `export const retryPolicy = {
+  maximumAttempts: 1,
+};
+`,
+          newContent: `export const retryPolicy = {
+  maximumAttempts: 3,
+  initialDelay: 250,
+  backoff: 2,
+};
+`,
+        },
+        {
+          location: "src/retry-schedule.ts",
+          oldContent: `export function retryDelay() {
+  return 0;
+}
+`,
+          newContent: `export function retryDelay(attempt: number) {
+  return 250 * 2 ** (attempt - 1);
 }
 `,
         },
@@ -116,6 +160,68 @@ export class DemoReviewFactoryClass extends DomainClass<{}, {}> {
 `,
         },
         {
+          location: "src/retry-policy.test.ts",
+          oldContent: `it("runs tasks once", () => {
+  expect(retryPolicy.maximumAttempts).toBe(1);
+});
+`,
+          newContent: `it("allows three attempts", () => {
+  expect(retryPolicy.maximumAttempts).toBe(3);
+  expect(retryPolicy.backoff).toBe(2);
+});
+`,
+        },
+        {
+          location: "src/retry-schedule.test.ts",
+          oldContent: `it("does not delay retries", () => {
+  expect(retryDelay()).toBe(0);
+});
+`,
+          newContent: `it("uses exponential backoff", () => {
+  expect(retryDelay(1)).toBe(250);
+  expect(retryDelay(2)).toBe(500);
+});
+`,
+        },
+        {
+          location: "src/task-attempt-log.ts",
+          oldContent: `export type TaskAttemptLog = {
+  taskId: string;
+  status: "failed" | "complete";
+};
+`,
+          newContent: `export type TaskAttemptLog = {
+  taskId: string;
+  attempt: number;
+  status: "retrying" | "failed" | "complete";
+  retryAt?: string;
+};
+`,
+        },
+        {
+          location: "src/task-attempt-log.test.ts",
+          oldContent: `it("records task completion", () => {
+  expect(taskLog.status).toBe("complete");
+});
+`,
+          newContent: `it("records the scheduled retry", () => {
+  expect(taskLog).toMatchObject({ attempt: 2, status: "retrying" });
+  expect(taskLog.retryAt).toBeDefined();
+});
+`,
+        },
+        {
+          location: "src/task-runner-config.ts",
+          oldContent: `export const taskRunnerConfig = {
+  maximumAttempts: 1,
+};
+`,
+          newContent: `export const taskRunnerConfig = {
+  maximumAttempts: Number(process.env.TASK_MAXIMUM_ATTEMPTS ?? 3),
+};
+`,
+        },
+        {
           location: "README.md",
           oldContent: `## Task execution
 
@@ -125,6 +231,18 @@ Tasks run once and report their result.
 
 Tasks retry temporary failures up to three times. Retries use exponential
 backoff, starting at 250 milliseconds, before reporting the final result.
+`,
+        },
+        {
+          location: "docs/task-retries.md",
+          oldContent: `# Task retries
+
+Tasks report failures immediately.
+`,
+          newContent: `# Task retries
+
+Temporary failures retry up to three times with exponential backoff. The task
+log shows the current attempt and the next scheduled retry.
 `,
         },
       ],
@@ -158,6 +276,23 @@ When a task fails, the runner retries it automatically. The interface shows the 
 1. Add retry orchestration around the task executor.
 2. Inject the wait boundary so tests remain deterministic.
 3. Preserve the original error after the final attempt.
+
+### Retry policy
+
+~~~typescript
+export const retryPolicy = {
+  maximumAttempts: 3,
+  initialDelay: 250,
+  backoff: 2,
+};
+~~~
+
+### Proposed change
+
+~~~diff
+-const maximumAttempts = 1;
++const maximumAttempts = 3;
+~~~
 
 ## Acceptance criteria
 

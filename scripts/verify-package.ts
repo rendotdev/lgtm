@@ -109,6 +109,28 @@ try {
     throw new Error("Packaged skill must document remote SSH Git reviews");
   }
 
+  const requiredSkillToolNames = [
+    "lgtm-open-git-review",
+    "lgtm-open-worktree-review",
+    "lgtm-open-json-review",
+    "lgtm-open-document-review",
+    "open_git_review",
+    "open_worktree_review",
+    "open_json_review",
+    "open_document_review",
+  ];
+  const missingSkillToolNames = requiredSkillToolNames.filter(
+    (toolName) => !packagedSkill.includes(`\`${toolName}\``),
+  );
+  if (missingSkillToolNames.length > 0) {
+    throw new Error(
+      `Packaged skill must document native Pi and MCP tools: ${missingSkillToolNames.join(", ")}`,
+    );
+  }
+  if (!packagedSkill.includes("When neither integrated tool family is available")) {
+    throw new Error("Packaged skill must reserve the CLI for integrated-tool fallback");
+  }
+
   const isPackagedPiExtensionMissingRemoteReviewSupport =
     !packagedPiExtension.includes("remoteCwd") ||
     !packagedPiExtension.includes("SSHGitRepositoryReaderClass");

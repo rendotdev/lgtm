@@ -124,6 +124,7 @@ export class LgtmPiExtensionClass extends DomainClass<{}, LgtmPiExtensionDepende
         "lgtm-open-git-review: Present current Git changes for human review and approval.",
       promptGuidelines: [
         "Use lgtm-open-git-review only after the local or SSH-hosted checkout changes are ready and validated. For SSH, provide remote and an absolute remoteCwd. Provide a concise, task-specific name and wait for its automatic review follow-up before continuing.",
+        "Use lgtm-open-git-review instead of invoking the lgtm CLI through bash whenever this native Pi tool is available.",
       ],
       executionMode: "sequential",
       parameters: Type.Object({
@@ -178,6 +179,7 @@ export class LgtmPiExtensionClass extends DomainClass<{}, LgtmPiExtensionDepende
         "lgtm-open-worktree-review: Present another Git worktree for human review and approval.",
       promptGuidelines: [
         "Use lgtm-open-worktree-review for a distinct local worktree path, or provide remote with an absolute remote worktree path; wait for its automatic review follow-up before continuing.",
+        "Use lgtm-open-worktree-review instead of invoking the lgtm CLI through bash whenever this native Pi tool is available.",
       ],
       executionMode: "sequential",
       parameters: Type.Object({
@@ -226,6 +228,7 @@ export class LgtmPiExtensionClass extends DomainClass<{}, LgtmPiExtensionDepende
         "lgtm-open-json-review: Present explicit before-and-after file content for human review.",
       promptGuidelines: [
         "Use lgtm-open-json-review for reviewable content that is not represented by the current checkout or another worktree. Every file requires location, oldContent, and newContent strings.",
+        "Use lgtm-open-json-review instead of invoking the lgtm CLI through bash whenever this native Pi tool is available.",
       ],
       executionMode: "sequential",
       parameters: Type.Object({
@@ -258,6 +261,7 @@ export class LgtmPiExtensionClass extends DomainClass<{}, LgtmPiExtensionDepende
         "lgtm-open-document-review: Present Markdown, plans, specifications, prose, or skill drafts for human review.",
       promptGuidelines: [
         "Use lgtm-open-document-review for Markdown-rich work and include a meaningful source location when one exists.",
+        "Use lgtm-open-document-review instead of invoking the lgtm CLI through bash whenever this native Pi tool is available.",
       ],
       executionMode: "sequential",
       parameters: Type.Object({

@@ -3,7 +3,10 @@ import { DomainClass } from "../../domain/domain-class.ts";
 
 export class ToastNotificationsClass extends DomainClass<
   {},
-  { showDanger: (message: string) => unknown }
+  {
+    showDanger: (message: string) => unknown;
+    showSuccess: (message: string) => unknown;
+  }
 > {
   public preferencesNotSaved(params: { error: unknown }): void {
     const detail = params.error instanceof Error ? params.error.message : String(params.error);
@@ -22,6 +25,18 @@ export class ToastNotificationsClass extends DomainClass<
     void this.deps.showDanger("Comments not saved");
   }
 
+  public commentsCopied(): void {
+    void this.deps.showSuccess("Comments copied");
+  }
+
+  public commentsKeptInTab(): void {
+    void this.deps.showDanger("Comments kept in this tab");
+  }
+
+  public reviewNotFinished(): void {
+    void this.deps.showDanger("Review saved but not finished");
+  }
+
   public copyFailed(): void {
     void this.deps.showDanger("Copy failed");
   }
@@ -31,4 +46,7 @@ export class ToastNotificationsClass extends DomainClass<
   }
 }
 
-export const ToastNotifications = new ToastNotificationsClass({}, { showDanger: toast.danger });
+export const ToastNotifications = new ToastNotificationsClass(
+  {},
+  { showDanger: toast.danger, showSuccess: toast.success },
+);

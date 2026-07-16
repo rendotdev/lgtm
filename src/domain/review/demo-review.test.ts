@@ -2,18 +2,46 @@ import { describe, expect, it } from "vite-plus/test";
 import { DemoReviewFactory } from "./demo-review.ts";
 
 describe("DemoReviewFactoryClass", () => {
-  it("builds a compact multi-file diff demo", () => {
+  it("builds a grouped multi-file diff demo", () => {
     const demo = DemoReviewFactory.create({ kind: "diff" });
 
     expect(demo).toMatchObject({
       kind: "diff",
       name: "Demo: Add resilient task retries",
     });
-    expect(demo.files).toHaveLength(3);
+    expect(demo.files).toHaveLength(11);
     expect(demo.files?.map((file) => file.location)).toEqual([
       "src/task-runner.ts",
+      "src/retry-policy.ts",
+      "src/retry-schedule.ts",
       "src/task-runner.test.ts",
+      "src/retry-policy.test.ts",
+      "src/retry-schedule.test.ts",
+      "src/task-attempt-log.ts",
+      "src/task-attempt-log.test.ts",
+      "src/task-runner-config.ts",
       "README.md",
+      "docs/task-retries.md",
+    ]);
+    expect(demo.groups).toEqual([
+      {
+        title: "Implementation",
+        files: ["src/task-runner.ts", "src/retry-policy.ts", "src/retry-schedule.ts"],
+      },
+      {
+        title: "Validation",
+        files: [
+          "src/task-runner.test.ts",
+          "src/retry-policy.test.ts",
+          "src/retry-schedule.test.ts",
+        ],
+      },
+      {
+        title: "Observability",
+        files: ["src/task-attempt-log.ts", "src/task-attempt-log.test.ts"],
+      },
+      { title: "Configuration", files: ["src/task-runner-config.ts"] },
+      { title: "Documentation", files: ["README.md", "docs/task-retries.md"] },
     ]);
   });
 
@@ -27,6 +55,8 @@ describe("DemoReviewFactoryClass", () => {
     });
     expect(demo.document?.markdown).toContain("| Maximum attempts | 3 |");
     expect(demo.document?.markdown).toContain("## Acceptance criteria");
+    expect(demo.document?.markdown).toContain("~~~typescript");
+    expect(demo.document?.markdown).toContain("~~~diff");
   });
 
   it("builds realistic comments for both demo kinds", () => {
