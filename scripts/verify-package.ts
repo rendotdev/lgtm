@@ -85,6 +85,7 @@ try {
   const packageRoot = join(extractionDirectory, "package");
   const packageJson = JSON.parse(await readFile(join(packageRoot, "package.json"), "utf8")) as {
     bin?: Record<string, string>;
+    dependencies?: Record<string, string>;
     name?: string;
     peerDependencies?: Record<string, string>;
     pi?: { extensions?: string[]; skills?: string[] };
@@ -98,8 +99,8 @@ try {
   const packagedSkill = await readFile(join(packageRoot, "skills/lgtm/SKILL.md"), "utf8");
   const packagedPiExtension = await readFile(join(packageRoot, "extensions/index.js"), "utf8");
 
-  if (packageJson.peerDependencies?.typebox !== "*") {
-    throw new Error("Published Pi extension must declare typebox as a core peer dependency");
+  if (packageJson.dependencies?.typebox !== "1.1.38") {
+    throw new Error("Published Pi extension must include its TypeBox runtime dependency");
   }
   const isPackagedPiExtensionImportingHostPackages =
     packagedPiExtension.includes('from "@earendil-works/pi-ai"') ||
