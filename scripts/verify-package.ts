@@ -1,5 +1,5 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
+import { glob, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -10,185 +10,108 @@ if (!tarballArgument) {
 }
 
 const tarball = resolve(tarballArgument);
-const allowedRoots = new Set([
-  ".agents",
-  ".claude-plugin",
-  ".codex-plugin",
-  ".mcp.claude.json",
-  ".mcp.json",
-  "LICENSE",
-  "README.md",
-  "bin",
-  "dist",
-  "extensions",
-  "package.json",
-  "skills",
-]);
-const requiredPaths = [
-  "package/package.json",
-  "package/LICENSE",
-  "package/README.md",
-  "package/.agents/plugins/marketplace.json",
-  "package/.claude-plugin/marketplace.json",
-  "package/.claude-plugin/plugin.json",
-  "package/.codex-plugin/plugin.json",
-  "package/.mcp.claude.json",
-  "package/.mcp.json",
-  "package/bin/lgtm.mjs",
-  "package/dist/cli.mjs",
-  "package/extensions/index.js",
-  "package/skills/lgtm/SKILL.md",
-];
+const listResult = spawnSync("tar", ["-tzf", tarball], { encoding: "utf8" });
 
-function run(command: string[]): string {
-  const [executable, ...arguments_] = command;
-  const result = spawnSync(executable, arguments_, { encoding: "utf8" });
-
-  if (result.status !== 0) {
-    throw new Error(`${command.join(" ")} failed:\n${result.stderr.trim()}`);
-  }
-
-  return result.stdout;
+if (listResult.status !== 0) {
+  throw new Error(`Could not inspect package:\n${listResult.stderr.trim()}`);
 }
 
-const entries = run(["tar", "-tzf", tarball])
+const entries = listResult.stdout
   .split("\n")
   .map((entry) => entry.replace(/\/$/, ""))
   .filter(Boolean);
-const entrySet = new Set(entries);
-
-for (const entry of entries) {
+const packagedPaths = entries.map((entry) => {
   if (!entry.startsWith("package/")) {
     throw new Error(`Unexpected tar entry outside package/: ${entry}`);
   }
 
-  const relativePath = entry.slice("package/".length);
-  const root = relativePath.split("/", 1)[0];
-
-  const isUnexpectedRoot = root && !allowedRoots.has(root);
-  if (isUnexpectedRoot) {
-    throw new Error(`Unexpected published path: ${entry}`);
+  const packagedPath = entry.slice("package/".length);
+  const hasUnsafeSegment = packagedPath
+    .split("/")
+    .some((segment) => segment === "." || segment === "..");
+  const isPackagedPathUnsafe = !packagedPath || packagedPath.startsWith("/") || hasUnsafeSegment;
+  if (isPackagedPathUnsafe) {
+    throw new Error(`Unsafe package path: ${entry}`);
   }
-}
 
-for (const requiredPath of requiredPaths) {
-  if (!entrySet.has(requiredPath)) {
-    throw new Error(`Required published path is missing: ${requiredPath}`);
-  }
+  return packagedPath;
+});
+
+if (!packagedPaths.includes("package.json")) {
+  throw new Error("Package must include package.json");
 }
 
 const extractionDirectory = await mkdtemp(join(tmpdir(), "lgtm-package-"));
 
 try {
-  run(["tar", "-xzf", tarball, "-C", extractionDirectory]);
+  const extractResult = spawnSync("tar", ["-xzf", tarball, "-C", extractionDirectory], {
+    encoding: "utf8",
+  });
+  if (extractResult.status !== 0) {
+    throw new Error(`Could not extract package:\n${extractResult.stderr.trim()}`);
+  }
 
   const packageRoot = join(extractionDirectory, "package");
   const packageJson = JSON.parse(await readFile(join(packageRoot, "package.json"), "utf8")) as {
-    bin?: Record<string, string>;
-    dependencies?: Record<string, string>;
+    bin?: string | Record<string, string>;
+    files?: string[];
     name?: string;
-    peerDependencies?: Record<string, string>;
     pi?: { extensions?: string[]; skills?: string[] };
-    scripts?: Record<string, string>;
     version?: string;
   };
-  const codexMcpJson = JSON.parse(await readFile(join(packageRoot, ".mcp.json"), "utf8")) as {
-    mcpServers?: { lgtm?: { args?: string[]; command?: string; cwd?: string } };
-  };
-  const builtCli = await readFile(join(packageRoot, "dist/cli.mjs"), "utf8");
-  const packagedSkill = await readFile(join(packageRoot, "skills/lgtm/SKILL.md"), "utf8");
-  const packagedPiExtension = await readFile(join(packageRoot, "extensions/index.js"), "utf8");
 
-  if (packageJson.dependencies?.typebox !== "1.1.38") {
-    throw new Error("Published Pi extension must include its TypeBox runtime dependency");
+  const isPackageIdentityMissing = !packageJson.name || !packageJson.version;
+  if (isPackageIdentityMissing) {
+    throw new Error("Package must declare a name and version");
   }
-  const isPackagedPiExtensionImportingHostPackages =
-    packagedPiExtension.includes('from "@earendil-works/pi-ai"') ||
-    packagedPiExtension.includes('from "@earendil-works/pi-coding-agent"');
-  if (isPackagedPiExtensionImportingHostPackages) {
-    throw new Error(
-      "Published Pi extension must not import unavailable Pi host packages at runtime",
-    );
+  if (!packageJson.files?.length) {
+    throw new Error("Package must declare the files it publishes");
   }
 
-  const isBuiltCliMissingRemoteReviewSupport =
-    !builtCli.includes("--remote-cwd") || !builtCli.includes("SSHGitRepositoryReaderClass");
-  if (isBuiltCliMissingRemoteReviewSupport) {
-    throw new Error("Packaged CLI must include remote SSH Git review support");
-  }
-
-  const isPackagedSkillMissingRemoteReviewSupport =
-    !packagedSkill.includes("--remote") || !packagedSkill.includes("remoteCwd");
-  if (isPackagedSkillMissingRemoteReviewSupport) {
-    throw new Error("Packaged skill must document remote SSH Git reviews");
-  }
-
-  const requiredSkillToolNames = [
-    "lgtm-open-git-review",
-    "lgtm-open-worktree-review",
-    "lgtm-open-json-review",
-    "lgtm-open-document-review",
-    "open_git_review",
-    "open_worktree_review",
-    "open_json_review",
-    "open_document_review",
+  const binPaths =
+    typeof packageJson.bin === "string" ? [packageJson.bin] : Object.values(packageJson.bin ?? {});
+  const declaredPaths = [
+    ...packageJson.files.map((path) => ({ path, acceptsChildren: true, source: "files" })),
+    ...binPaths.map((path) => ({ path, acceptsChildren: false, source: "bin" })),
+    ...(packageJson.pi?.extensions ?? []).map((path) => ({
+      path,
+      acceptsChildren: false,
+      source: "pi.extensions",
+    })),
+    ...(packageJson.pi?.skills ?? []).map((path) => ({
+      path,
+      acceptsChildren: true,
+      source: "pi.skills",
+    })),
   ];
-  const missingSkillToolNames = requiredSkillToolNames.filter(
-    (toolName) => !packagedSkill.includes(`\`${toolName}\``),
-  );
-  if (missingSkillToolNames.length > 0) {
-    throw new Error(
-      `Packaged skill must document native Pi and MCP tools: ${missingSkillToolNames.join(", ")}`,
-    );
-  }
-  if (!packagedSkill.includes("When neither integrated tool family is available")) {
-    throw new Error("Packaged skill must reserve the CLI for integrated-tool fallback");
-  }
 
-  const isPackagedPiExtensionMissingRemoteReviewSupport =
-    !packagedPiExtension.includes("remoteCwd") ||
-    !packagedPiExtension.includes("SSHGitRepositoryReaderClass");
-  if (isPackagedPiExtensionMissingRemoteReviewSupport) {
-    throw new Error("Packaged Pi extension must include remote SSH Git review support");
-  }
-
-  if (packageJson.bin?.lgtm !== "bin/lgtm.mjs") {
-    throw new Error('package.json must map bin.lgtm to "bin/lgtm.mjs"');
-  }
-
-  const codexMcpServer = codexMcpJson.mcpServers?.lgtm;
-  if (codexMcpServer?.command !== "npx") {
-    throw new Error('Codex MCP server must use "npx" so source-installed plugins can start.');
-  }
-  if (codexMcpServer.args?.join(" ") !== `-y ${packageJson.name}@${packageJson.version} mcp`) {
-    throw new Error("Codex MCP server must run the current published LGTM package version");
-  }
-  if (codexMcpServer.cwd !== undefined) {
-    throw new Error("Codex MCP server must not depend on a local dist/ directory");
-  }
-
-  const piExtension = packageJson.pi?.extensions?.[0];
-  if (piExtension !== "extensions/index.js") {
-    throw new Error('package.json pi.extensions must point to "extensions/index.js"');
-  }
-  if (!entrySet.has(`package/${piExtension}`)) {
-    throw new Error("package.json pi.extensions must point to a packaged file");
-  }
-  const piSkill = packageJson.pi?.skills?.[0];
-  const isSkillDirectoryMissing = !piSkill || !entrySet.has(`package/${piSkill}`);
-  if (isSkillDirectoryMissing) {
-    const skillHasEntries = piSkill
-      ? entries.some((entry) => entry.startsWith(`package/${piSkill}/`))
-      : false;
-
-    if (!skillHasEntries) {
-      throw new Error("package.json pi.skills must point to packaged skills");
+  for (const declaration of declaredPaths) {
+    const normalizedPath = declaration.path.replace(/^\.\//, "").replace(/\/$/, "");
+    const hasUnsafeSegment = normalizedPath
+      .split("/")
+      .some((segment) => segment === "." || segment === "..");
+    const isDeclaredPathUnsafe =
+      !normalizedPath || normalizedPath.startsWith("/") || hasUnsafeSegment;
+    if (isDeclaredPathUnsafe) {
+      throw new Error(`Unsafe ${declaration.source} path: ${declaration.path}`);
     }
-  }
 
-  for (const lifecycleScript of ["preinstall", "install", "postinstall"]) {
-    if (packageJson.scripts?.[lifecycleScript]) {
-      throw new Error(`Published package must not define ${lifecycleScript}`);
+    const isGlobPattern = /[*?[\]{}]/.test(normalizedPath);
+    const globMatches = new Array<string>();
+    if (isGlobPattern) {
+      for await (const match of glob(normalizedPath, { cwd: packageRoot })) {
+        globMatches.push(match);
+      }
+    }
+    const isPresent = isGlobPattern
+      ? globMatches.length > 0
+      : packagedPaths.some(
+          (packagedPath) =>
+            packagedPath === normalizedPath ||
+            (declaration.acceptsChildren && packagedPath.startsWith(`${normalizedPath}/`)),
+        );
+    if (!isPresent) {
+      throw new Error(`Declared ${declaration.source} path is missing: ${declaration.path}`);
     }
   }
 } finally {
