@@ -1,9 +1,14 @@
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const tarballArgument = process.argv[2];
+const piCli = join(
+  dirname(fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent"))),
+  "cli.js",
+);
 
 if (!tarballArgument) {
   throw new Error("Usage: bun scripts/verify-package.ts <package.tgz>");
@@ -40,12 +45,13 @@ const requiredPaths = [
   "package/skills/lgtm/SKILL.md",
 ];
 
-function run(command: string[]): string {
+function run(command: string[], options: { env?: NodeJS.ProcessEnv; input?: string } = {}): string {
   const [executable, ...arguments_] = command;
-  const result = spawnSync(executable, arguments_, { encoding: "utf8" });
+  const result = spawnSync(executable, arguments_, { encoding: "utf8", ...options });
 
   if (result.status !== 0) {
-    throw new Error(`${command.join(" ")} failed:\n${result.stderr.trim()}`);
+    const failureOutput = result.stderr.trim() || result.stdout.trim();
+    throw new Error(`${command.join(" ")} failed:\n${failureOutput}`);
   }
 
   return result.stdout;
@@ -99,18 +105,12 @@ try {
   const packagedSkill = await readFile(join(packageRoot, "skills/lgtm/SKILL.md"), "utf8");
   const packagedPiExtension = await readFile(join(packageRoot, "extensions/index.js"), "utf8");
 
-  if (packageJson.dependencies?.typebox !== "1.1.38") {
-    throw new Error("Published Pi extension must include its TypeBox runtime dependency");
+  if (packageJson.dependencies?.typebox !== undefined) {
+    throw new Error("Published Pi extension must not install Pi's host-provided TypeBox package");
   }
-  const isPackagedPiExtensionImportingHostPackages =
-    packagedPiExtension.includes('from "@earendil-works/pi-ai"') ||
-    packagedPiExtension.includes('from "@earendil-works/pi-coding-agent"');
-  if (isPackagedPiExtensionImportingHostPackages) {
-    throw new Error(
-      "Published Pi extension must not import unavailable Pi host packages at runtime",
-    );
+  if (packageJson.peerDependencies?.typebox !== "*") {
+    throw new Error("Published Pi extension must declare TypeBox as a core peer dependency");
   }
-
   const isBuiltCliMissingRemoteReviewSupport =
     !builtCli.includes("--remote-cwd") || !builtCli.includes("SSHGitRepositoryReaderClass");
   if (isBuiltCliMissingRemoteReviewSupport) {
@@ -174,6 +174,73 @@ try {
   if (!entrySet.has(`package/${piExtension}`)) {
     throw new Error("package.json pi.extensions must point to a packaged file");
   }
+
+  if (!packageJson.name) {
+    throw new Error("Published package must have a name");
+  }
+  const managedInstallRoot = join(extractionDirectory, "managed-install");
+  run(
+    [
+      "npm",
+      "install",
+      "--prefix",
+      managedInstallRoot,
+      "--ignore-scripts",
+      "--legacy-peer-deps",
+      tarball,
+    ],
+    {
+      env: {
+        ...process.env,
+        npm_config_cache: join(extractionDirectory, "npm-cache"),
+      },
+    },
+  );
+
+  const installedPiExtension = join(
+    managedInstallRoot,
+    "node_modules",
+    packageJson.name,
+    piExtension,
+  );
+  const piRpcRequestId = "verify-pi-extension";
+  const piRpcOutput = run(
+    [
+      "node",
+      piCli,
+      "--mode",
+      "rpc",
+      "--no-session",
+      "--no-context-files",
+      "--no-skills",
+      "--no-prompt-templates",
+      "--no-themes",
+      "--no-extensions",
+      "--extension",
+      installedPiExtension,
+    ],
+    {
+      env: {
+        ...process.env,
+        PI_CODING_AGENT_DIR: join(extractionDirectory, "pi-agent"),
+        PI_OFFLINE: "1",
+      },
+      input: `${JSON.stringify({ id: piRpcRequestId, type: "get_state" })}\n`,
+    },
+  );
+  const piRpcResponses = piRpcOutput
+    .trim()
+    .split("\n")
+    .map(function parsePiRpcLine(line) {
+      return JSON.parse(line) as { id?: string; success?: boolean };
+    });
+  const piRpcResponse = piRpcResponses.find(function isVerificationResponse(response) {
+    return response.id === piRpcRequestId;
+  });
+  if (piRpcResponse?.success !== true) {
+    throw new Error("Published Pi extension must load through Pi's managed package runtime");
+  }
+
   const piSkill = packageJson.pi?.skills?.[0];
   const isSkillDirectoryMissing = !piSkill || !entrySet.has(`package/${piSkill}`);
   if (isSkillDirectoryMissing) {
