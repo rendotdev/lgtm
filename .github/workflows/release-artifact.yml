@@ -116,7 +116,18 @@ jobs:
         run: |
           tarball=$(find artifacts -type f -name '*.tgz' -print -quit)
           test -n "$tarball"
-          npm publish "$PWD/$tarball" --access public
+          package_version=$(tar -xOf "$tarball" package/package.json | node -e '
+            let input = "";
+            process.stdin.on("data", function collect(chunk) { input += chunk; });
+            process.stdin.on("end", function printVersion() {
+              process.stdout.write(JSON.parse(input).version);
+            });
+          ')
+          publish_tag=latest
+          if [[ "$package_version" == *-* ]]; then
+            publish_tag=beta
+          fi
+          npm publish "$PWD/$tarball" --access public --tag "$publish_tag"
 
       - name: Attach artifact to GitHub release
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3
@@ -126,3 +137,4 @@ jobs:
             artifacts/*.sha256
           fail_on_unmatched_files: true
           generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}

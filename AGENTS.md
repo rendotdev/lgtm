@@ -1,11 +1,49 @@
-- After every turn that changes files, run `vp run lgtm review -- --name "<descriptive review name>"` once to validate the current LGTM source before responding. Give the human the review URL and wait for their decision. Do not reopen unchanged content.
-- Use `lgtm review --name "<descriptive review name>"` to open a review of the current Git changes. Use a descriptive `--name` with `lgtm review worktree`, `lgtm review document`, or `lgtm review json` for other review sources.
-- Use `lgtm review result` with the exact printed review path after the human decides or when recovering a missing handoff. It leaves an open review running and stops its server after `approved`, `changes_requested`, or `canceled`. Treat those as the only review outcomes; never use bare `lgtm` as a review command or `LGTM` as an outcome.
-- Put reusable behavior in classes ending with `Class`. Every class constructor takes `params` as its first object argument and `deps` as its second object argument, including empty `{}` objects. Keep module-level helpers out of application code.
-- Ink and React components may use function declarations such as `function MyComponent(props: Props) {}`. Custom hooks and hook builders may remain functions when reusable behavior depends on React effects, refs, state, or another hook lifecycle. Build dependency-injected hooks with a `buildUseX(params, deps)` factory that returns a named `useX` function, then export the shared hook by calling the builder at module scope. Put all other reusable application behavior in classes. Prefer `function` syntax over arrow functions for callbacks and local functions.
-- Prefer TypeScript inference. Inline one-use object and function shapes where they are consumed. Introduce named types only when they are reused, define a public contract, or materially clarify domain meaning. Avoid aliases that only rename an inferred primitive, callback, ref, timer, or dependency bag.
-- Name compound conditions with a descriptive boolean `const` before an `if` statement so the branch reads as `if (shouldContinue)` or `if (isInvalid)`.
-- Name every variable that holds an application class instance in PascalCase, including exported shared instances and local instances.
-- All application classes must inherit from `DomainClass`, or from an approved specialized base class that inherits from it. Use its `protected readonly params` and `deps` constructor shortcuts instead of redeclaring those fields.
-- Vite+ is the source execution pipeline. Run `vp check`, then `vp run package`, before running LGTM. Run the generated `dist/cli.mjs` with Node; never execute source TypeScript with Node directly.
-- For releases, start from a clean worktree and run `bun run release:patch`, `bun run release:minor`, or `bun run release:major`. The command validates the project, updates metadata, creates the release commit and tag. Push it with `git push origin HEAD --follow-tags`. The `v*` tag triggers `.github/workflows/release-artifact.yml`, which publishes to npm through trusted publishing and creates the GitHub release. Never run `npm publish` locally.
+- After file changes, run `vp run lgtm review -- --name "<descriptive review name>"` once before responding.
+- Give the human the review URL and wait for a decision.
+- Do not reopen unchanged content.
+- Use `lgtm review --name "<descriptive review name>"` for current Git changes.
+- Use the matching `lgtm review worktree`, `document`, or `json` command for other review sources.
+- Use `lgtm review result` with the exact review path after the human decides or a handoff is missing.
+- Treat `approved`, `changes_requested`, and `canceled` as the only review outcomes.
+- Never use bare `lgtm` as a review command or `LGTM` as an outcome.
+- Build reusable runtime behavior through `src/builder.ts`.
+- Use `build().service`, `singleton`, `component`, or `hook` for reusable behavior.
+- Run executable roots through `build().entrypoint`.
+- Never self-invoke a service at module scope.
+- Do not add application classes, `DomainClass`, or base-class dependency injection.
+- Services receive stable `config` and replaceable `deps`.
+- Inline production `deps` in builder definitions.
+- Avoid named types and constants for one-use dependency bags.
+- Use `defineBuilderDeps` only when inline dependencies need wider replacement types.
+- Service methods accept one `params` object.
+- Export the named production value and generated `Builder` from each shared builder result.
+- Name services `*Service` and singletons `*Singleton`.
+- Name components `*Component` or `*Route`; name hooks `use*`.
+- Use `build().hook` for lifecycle behavior.
+- Provide React primitives and platform services to hooks through `deps`.
+- Use named functions for callbacks, hook implementations, components, and private builder functions.
+- Make each top-level UI route a smart `XYZRoute` component.
+- Let routes own queries, mutations, persistence, navigation, global effects, and view mapping.
+- Colocate an `XYZTemplateComponent` with each smart route.
+- Pass render data and callbacks to templates through props.
+- Split route layout into focused header, sidebar, content, and footer components.
+- Share UI concepts used by both diff and document views.
+- Prefer TypeScript inference.
+- Inline one-use object and function shapes where they are consumed.
+- Name types only for reused contracts or meaningful domain concepts.
+- Avoid aliases that only rename inferred primitives, callbacks, refs, timers, or dependency bags.
+- Name compound conditions before `if` statements with descriptive boolean constants.
+- Keep source under `modules/`, `entrypoints/`, or `web/`; `src/builder.ts` is the root exception.
+- Give behavior folders a same-named source file and colocated test.
+- Keep grouping folders limited to child folders.
+- Preserve behavior when reorganizing capabilities.
+- Use Vite+ as the source execution pipeline.
+- Run `vp check`, then `vp run package`, before LGTM.
+- Run generated `dist/cli.mjs` with Node; never execute source TypeScript with Node.
+- Start releases from a clean worktree.
+- Run `bun run release:patch`, `release:minor`, `release:major`, or `release:beta` to release.
+- Use `release:beta` to start or increment a beta; use `release:minor` to promote it.
+- Let the release command validate, update metadata, commit, and tag.
+- Push releases with `git push origin HEAD --follow-tags`.
+- Let the `v*` tag publish npm and create a stable or prerelease GitHub release.
+- Never run `npm publish` locally.

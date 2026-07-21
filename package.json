@@ -46,6 +46,7 @@
     "pack:dry": "vp run artifact:pack",
     "package": "vp run build:package",
     "prepack": "vp run artifact:prepare",
+    "release:beta": "vp run release:beta:task",
     "release:major": "vp run release:major:task",
     "release:minor": "vp run release:minor:task",
     "release:patch": "vp run release:patch:task",

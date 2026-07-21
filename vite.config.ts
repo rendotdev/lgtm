@@ -2,82 +2,91 @@ import { defineConfig, type ViteUserConfig } from "vite-plus";
 import type { Plugin } from "@voidzero-dev/vite-plus-core";
 import tailwindcss from "@tailwindcss/vite";
 import { resolve } from "node:path";
-import { DomainClass } from "./src/domain/domain-class.ts";
-import type { ReviewPointer } from "./src/domain/review/review.ts";
+import { build } from "./src/builder.ts";
+import type { ReviewPointer } from "./src/modules/review/review/review.ts";
 import {
   collectGitReviewFiles,
   openReview,
   stopReview,
-} from "./src/platform/review/review-platform.ts";
+} from "./src/modules/review/server/server.ts";
 
-type LgtmDevEnvironmentDependencies = {
-  collectGitReviewFiles: typeof collectGitReviewFiles;
-  openReview: typeof openReview;
-  stopReview: typeof stopReview;
-};
+export const { LgtmDevEnvironmentService, LgtmDevEnvironmentServiceBuilder } = build().service(
+  "LgtmDevEnvironmentService",
+  {
+    config: { cwd: process.cwd(), sessionId: `dev-${process.pid}` },
+    deps: {
+      collectGitReviewFiles,
+      openReview,
+      stopReview,
+    },
+    build({ config, deps }) {
+      let review: ReviewPointer | undefined;
+      let stopPromise: Promise<boolean> | undefined;
 
-export class LgtmDevEnvironmentClass extends DomainClass<
-  { cwd: string; sessionId: string },
-  LgtmDevEnvironmentDependencies
-> {
-  private review: ReviewPointer | undefined;
-  private stopPromise: Promise<boolean> | undefined;
+      async function stop(params: {}) {
+        void params;
+        if (!review) {
+          return false;
+        }
+        stopPromise ??= deps.stopReview(config.cwd, review.reviewPath);
+        return await stopPromise;
+      }
 
-  public async start() {
-    const files = await this.deps.collectGitReviewFiles(this.params.cwd);
-    this.review = await this.deps.openReview(
-      { kind: "diff", name: "LGTM development", files },
-      {
-        cwd: this.params.cwd,
-        sessionId: this.params.sessionId,
-        cleanupOnExit: true,
-        detachedServer: false,
-        openBrowser: false,
-        replaceActiveReview: false,
-        trackAsActiveReview: false,
-      },
-    );
-    return this.review;
-  }
+      async function start(params: {}) {
+        void params;
+        const files = await deps.collectGitReviewFiles(config.cwd);
+        review = await deps.openReview(
+          { kind: "diff", name: "LGTM development", files },
+          {
+            cwd: config.cwd,
+            sessionId: config.sessionId,
+            cleanupOnExit: true,
+            detachedServer: false,
+            openBrowser: false,
+            replaceActiveReview: false,
+            trackAsActiveReview: false,
+          },
+        );
+        return review;
+      }
 
-  public plugin(): Plugin {
-    return {
-      name: "lgtm-dev-environment",
-      apply: "serve",
-      configureServer: (server) => {
-        server.httpServer?.once("close", () => void this.stop());
-      },
-      closeBundle: async () => {
-        await this.stop();
-      },
-    };
-  }
+      function plugin(params: {}): Plugin {
+        void params;
+        return {
+          name: "lgtm-dev-environment",
+          apply: "serve",
+          configureServer(server) {
+            server.httpServer?.once("close", function closeReview() {
+              void stop({});
+            });
+          },
+          async closeBundle() {
+            await stop({});
+          },
+        };
+      }
 
-  public async stop() {
-    if (!this.review) {
-      return false;
-    }
-    this.stopPromise ??= this.deps.stopReview(this.params.cwd, this.review.reviewPath);
-    return await this.stopPromise;
-  }
-}
+      return { plugin, start, stop };
+    },
+  },
+);
 
 export default defineConfig(async ({ command, mode }): Promise<ViteUserConfig> => {
   const isDev = command === "serve" && mode !== "test" && !process.argv.includes("preview");
   const DevEnvironment = isDev
-    ? new LgtmDevEnvironmentClass(
-        {
+    ? LgtmDevEnvironmentServiceBuilder({
+        config: {
           cwd: resolve(process.env.LGTM_DEV_CWD ?? process.cwd()),
           sessionId: `dev-${process.pid}`,
         },
-        { collectGitReviewFiles, openReview, stopReview },
-      )
+        deps: { collectGitReviewFiles, openReview, stopReview },
+      })
     : undefined;
-  const devReview = await DevEnvironment?.start();
+  const devReview = await DevEnvironment?.start({});
 
   return {
-    root: "src/interfaces/web",
-    plugins: [tailwindcss(), ...(DevEnvironment ? [DevEnvironment.plugin()] : [])],
+    root: "src/web",
+    plugins: [tailwindcss(), ...(DevEnvironment ? [DevEnvironment.plugin({})] : [])],
     server: devReview
       ? {
           proxy: {
@@ -90,8 +99,34 @@ export default defineConfig(async ({ command, mode }): Promise<ViteUserConfig> =
       format: "es",
     },
     build: {
-      outDir: "../../../dist/web",
+      outDir: "../../dist/web",
       emptyOutDir: true,
+      rolldownOptions: {
+        output: {
+          manualChunks(id) {
+            const isDocumentMarkdownDependency =
+              id.includes("/react-markdown/") ||
+              id.includes("/remark-") ||
+              id.includes("/rehype-") ||
+              id.includes("/unified/") ||
+              id.includes("/micromark") ||
+              id.includes("/mdast-") ||
+              id.includes("/hast-");
+            if (isDocumentMarkdownDependency) {
+              return "document-markdown";
+            }
+            const isCodeRenderingDependency = id.includes("/@pierre/diffs/");
+            if (isCodeRenderingDependency) {
+              return "code-rendering";
+            }
+            const isUiDependency = id.includes("/@heroui/") || id.includes("/framer-motion/");
+            if (isUiDependency) {
+              return "ui";
+            }
+            return undefined;
+          },
+        },
+      },
     },
     fmt: {
       ignorePatterns: ["dist/**", "extensions/**", ".lgtm/**"],
@@ -100,16 +135,16 @@ export default defineConfig(async ({ command, mode }): Promise<ViteUserConfig> =
     lint: {
       ignorePatterns: ["dist/**", "extensions/**", ".lgtm/**"],
       jsPlugins: [
-        { name: "lgtm", specifier: "./scripts/oxlint-plugin.ts" },
+        {
+          name: "lgtm",
+          specifier: "./src/modules/lint/oxlint-plugin/oxlint-plugin.ts",
+        },
         { name: "vite-plus", specifier: "vite-plus/oxlint-plugin" },
       ],
       rules: {
         curly: ["error", "all"],
         "func-style": ["error", "declaration", { allowArrowFunctions: false }],
-        "lgtm/application-class-conventions": "error",
         "lgtm/named-compound-if-condition": "error",
-        "lgtm/pascal-case-class-instance": "error",
-        "lgtm/public-method-params": "error",
         "new-cap": ["error", { capIsNew: false, newIsCap: true }],
         "typescript/explicit-member-accessibility": "error",
         "typescript/no-inferrable-types": "error",
@@ -122,17 +157,15 @@ export default defineConfig(async ({ command, mode }): Promise<ViteUserConfig> =
     },
     test: {
       include: [
-        "./**/*.test.ts",
-        "../cli/**/*.test.{ts,tsx}",
-        "../mcp/**/*.test.ts",
-        "../pi/**/*.test.ts",
-        "../../domain/**/*.test.ts",
-        "../../platform/**/*.test.ts",
+        "./**/*.test.{ts,tsx}",
+        "../builder.test.ts",
+        "../modules/**/*.test.{ts,tsx}",
+        "../entrypoints/**/*.test.{ts,tsx}",
       ],
       passWithNoTests: true,
     },
     pack: {
-      entry: ["src/interfaces/cli/cli.ts"],
+      entry: ["src/entrypoints/cli/cli.ts"],
       format: ["esm"],
       outDir: "dist",
       clean: false,
@@ -143,7 +176,7 @@ export default defineConfig(async ({ command, mode }): Promise<ViteUserConfig> =
           : typeof options.input === "string"
             ? [options.input]
             : Object.values(options.input ?? {});
-        return entries.some((entry) => entry.endsWith("/interfaces/pi/index.ts"))
+        return entries.some((entry) => entry.endsWith("/entrypoints/pi/index.ts"))
           ? { js: ".js" }
           : undefined;
       },
@@ -175,7 +208,7 @@ export default defineConfig(async ({ command, mode }): Promise<ViteUserConfig> =
           output: ["dist/cli.mjs"],
         },
         "build:pi": {
-          command: "vp pack src/interfaces/pi/index.ts --out-dir extensions --clean",
+          command: "vp pack src/entrypoints/pi/index.ts --out-dir extensions --clean",
           cache: true,
           output: ["extensions/index.js"],
         },
@@ -206,6 +239,20 @@ export default defineConfig(async ({ command, mode }): Promise<ViteUserConfig> =
         },
         "metadata:write": {
           command: "bun scripts/sync-plugin-metadata.ts",
+          cache: false,
+        },
+        "test:e2e:fixtures": {
+          command: "bun scripts/generate-large-review-fixtures.ts",
+          cache: true,
+          output: ["e2e/.generated/**"],
+        },
+        "test:e2e:performance": {
+          command: "vp exec playwright test --config e2e/playwright.config.ts",
+          dependsOn: ["build:package", "test:e2e:fixtures"],
+          cache: false,
+        },
+        "release:beta:task": {
+          command: "bun scripts/release.ts beta",
           cache: false,
         },
         "release:major:task": {
