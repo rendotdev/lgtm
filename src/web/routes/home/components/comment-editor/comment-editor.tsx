@@ -96,7 +96,7 @@ function CommentEditorView(props: {
   return (
     <div
       data-review-comment="true"
-      className="flex items-center bg-[#0070f3]/10 px-6 py-3 font-sans"
+      className="flex items-center bg-[var(--review-highlight-background)] px-[var(--review-comment-padding-inline)] py-[var(--review-comment-padding-block)] font-sans"
     >
       <form.Field name="comment">
         {(field) => (

@@ -49,6 +49,10 @@
   --radius-3xl: var(--vercel-radius);
   --radius-4xl: var(--vercel-radius);
   --background: #fff;
+  --review-highlight-background: color-mix(in srgb, var(--background) 90%, #0070f3);
+  --review-document-highlight-padding-inline: 1ch;
+  --review-comment-padding-inline: 1.5rem;
+  --review-comment-padding-block: 0.75rem;
   --foreground: #000;
   --review-diff-background: #fff;
   --surface: #fff;

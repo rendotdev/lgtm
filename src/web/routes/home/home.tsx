@@ -1683,7 +1683,7 @@ const DocumentMarkdownTree = React.memo(function DocumentMarkdownTree(
         <li
           {...listItemProps}
           {...blockProps}
-          className={`relative transition-colors duration-[var(--motion-duration)] ease-[var(--motion-ease)] data-[annotated=true]:rounded-[var(--vercel-radius)] data-[annotated=true]:bg-[#0070f3]/10 ${listItemProps.className ?? ""}`}
+          className={`relative transition-colors duration-[var(--motion-duration)] ease-[var(--motion-ease)] data-[annotated=true]:rounded-[var(--vercel-radius)] data-[annotated=true]:bg-[var(--review-highlight-background)] data-[annotated=true]:px-[var(--review-document-highlight-padding-inline)] ${listItemProps.className ?? ""}`}
         >
           {blockContent}
         </li>
@@ -1692,7 +1692,7 @@ const DocumentMarkdownTree = React.memo(function DocumentMarkdownTree(
     return (
       <div
         {...blockProps}
-        className={`relative transition-colors duration-[var(--motion-duration)] ease-[var(--motion-ease)] data-[annotated=true]:rounded-[var(--vercel-radius)] data-[annotated=true]:bg-[#0070f3]/10 ${blockClassName}`}
+        className={`relative transition-colors duration-[var(--motion-duration)] ease-[var(--motion-ease)] data-[annotated=true]:rounded-[var(--vercel-radius)] data-[annotated=true]:bg-[var(--review-highlight-background)] data-[annotated=true]:px-[var(--review-document-highlight-padding-inline)] ${blockClassName}`}
       >
         {blockContent}
       </div>
@@ -1995,7 +1995,7 @@ function DocumentCommentPortal(props: {
     return null;
   }
   return createPortal(
-    <div className="not-typeset">
+    <div className="not-typeset -mx-[var(--review-document-highlight-padding-inline)]">
       <CommentEditorComponent
         id={props.comment.id}
         value={props.comment.comment}
