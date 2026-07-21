@@ -251,6 +251,10 @@ export default defineConfig(async ({ command, mode }): Promise<ViteUserConfig> =
           dependsOn: ["build:package", "test:e2e:fixtures"],
           cache: false,
         },
+        "release:beta:task": {
+          command: "bun scripts/release.ts beta",
+          cache: false,
+        },
         "release:major:task": {
           command: "bun scripts/release.ts major",
           cache: false,

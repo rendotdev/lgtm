@@ -41,8 +41,9 @@
 - Run `vp check`, then `vp run package`, before LGTM.
 - Run generated `dist/cli.mjs` with Node; never execute source TypeScript with Node.
 - Start releases from a clean worktree.
-- Run `bun run release:patch`, `release:minor`, or `release:major` to release.
+- Run `bun run release:patch`, `release:minor`, `release:major`, or `release:beta` to release.
+- Use `release:beta` to start or increment a beta; use `release:minor` to promote it.
 - Let the release command validate, update metadata, commit, and tag.
 - Push releases with `git push origin HEAD --follow-tags`.
-- Let the `v*` tag publish npm and create the GitHub release.
+- Let the `v*` tag publish npm and create a stable or prerelease GitHub release.
 - Never run `npm publish` locally.

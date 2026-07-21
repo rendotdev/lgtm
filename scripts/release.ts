@@ -2,15 +2,16 @@ import { spawnSync } from "node:child_process";
 import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
-type ReleaseType = "patch" | "minor" | "major";
+type ReleaseType = "patch" | "minor" | "major" | "beta";
 
 const root = resolve(import.meta.dirname, "..");
 const releaseType = process.argv[2] as ReleaseType | undefined;
 const dryRun = process.argv.includes("--dry-run");
 
-const isInvalidReleaseType = !releaseType || !["patch", "minor", "major"].includes(releaseType);
+const isInvalidReleaseType =
+  !releaseType || !["patch", "minor", "major", "beta"].includes(releaseType);
 if (isInvalidReleaseType) {
-  throw new Error("Usage: bun scripts/release.ts <patch|minor|major> [--dry-run]");
+  throw new Error("Usage: bun scripts/release.ts <patch|minor|major|beta> [--dry-run]");
 }
 
 const currentVersion = await readPackageVersion();
@@ -56,7 +57,7 @@ run("git", ["tag", "--annotate", tag, "--message", tag]);
 console.log(`Prepared ${tag}.`);
 console.log("Push the release commit and tag when ready:");
 console.log("  git push origin HEAD --follow-tags");
-console.log("GitHub Actions will build the release artifact. npm publication remains manual.");
+console.log("GitHub Actions will publish the npm artifact and create the GitHub release.");
 
 async function readPackageVersion() {
   const packageJson = JSON.parse(await readFile(resolve(root, "package.json"), "utf8")) as {
@@ -76,14 +77,28 @@ async function writePackageVersion(version: string) {
 }
 
 export function incrementVersion(version: string, type: ReleaseType) {
-  const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(version);
+  const match = /^(\d+)\.(\d+)\.(\d+)(?:-beta\.(\d+))?$/.exec(version);
   if (!match) {
-    throw new Error(`Expected a stable semantic version, received ${version}.`);
+    throw new Error(`Expected a stable or beta semantic version, received ${version}.`);
   }
 
   const major = Number(match[1]);
   const minor = Number(match[2]);
   const patch = Number(match[3]);
+  const betaNumber = match[4] === undefined ? undefined : Number(match[4]);
+
+  if (type === "beta") {
+    return betaNumber === undefined
+      ? `${major}.${minor + 1}.0-beta.0`
+      : `${major}.${minor}.${patch}-beta.${betaNumber + 1}`;
+  }
+
+  if (betaNumber !== undefined) {
+    if (type === "minor") {
+      return `${major}.${minor}.${patch}`;
+    }
+    throw new Error("Promote a beta release with release:minor.");
+  }
 
   if (type === "major") {
     return `${major + 1}.0.0`;
