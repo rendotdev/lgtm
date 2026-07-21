@@ -9,6 +9,7 @@ export const { TerminalColorsSingleton, TerminalColorsSingletonBuilder } = build
         success: "green",
         error: "red",
         muted: "gray",
+        foreground: "white",
       };
     },
   },

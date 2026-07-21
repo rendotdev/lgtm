@@ -40,9 +40,7 @@ function CommandUiView(props: {
         ? TerminalColorsSingleton.error
         : TerminalColorsSingleton.loading;
   const hasCompleted = Boolean(props.completed?.length);
-  const current = props.label
-    ? `${symbol} ${props.label}${props.detail ? `\n${props.detail}` : ""}`
-    : "";
+  const current = props.label ? `${symbol} ${props.label}` : "";
 
   return (
     <Text>
@@ -67,6 +65,11 @@ function CommandUiView(props: {
       })}
       {hasCompleted && current ? "\n" : ""}
       {current ? <Text color={color}>{current}</Text> : null}
+      {props.detail ? (
+        <Text color={props.state === "success" ? TerminalColorsSingleton.foreground : color}>
+          {`${current ? "\n" : ""}${props.detail}`}
+        </Text>
+      ) : null}
     </Text>
   );
 }

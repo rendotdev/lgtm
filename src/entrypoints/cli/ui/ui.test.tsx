@@ -195,7 +195,7 @@ describe("CommandUiRendererService", () => {
         return undefined;
       },
       renderSuccess: function renderSuccess() {
-        return "Restart your agent session to reload lgtm integrations, or use the lgtm CLI now.";
+        return "• Restart your agent session to reload lgtm integrations, or use the lgtm CLI now.";
       },
     });
 
@@ -211,7 +211,7 @@ describe("CommandUiRendererService", () => {
         "  claude plugin marketplace update rendotdev",
         "    Updated marketplace.",
         "✔ Update finished",
-        "Restart your agent session to reload lgtm integrations, or use the lgtm CLI now.",
+        "• Restart your agent session to reload lgtm integrations, or use the lgtm CLI now.",
         "",
       ].join("\n"),
     ]);

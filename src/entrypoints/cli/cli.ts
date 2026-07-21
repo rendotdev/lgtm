@@ -283,7 +283,7 @@ async function main() {
         return { action: "update" as const, target, cli, ...integrations };
       },
       renderSuccess: function renderSuccess() {
-        return "Restart your agent session to reload lgtm integrations, or use the lgtm CLI now.";
+        return "• Restart your agent session to reload lgtm integrations, or use the lgtm CLI now.";
       },
     });
     return;
